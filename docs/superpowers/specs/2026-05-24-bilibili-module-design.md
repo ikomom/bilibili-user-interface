@@ -220,43 +220,239 @@ backend/app/
 
 ### 核心模块设计
 
+#### 0. 枚举字典和转换（schemas.py）
+
+**枚举映射字典：**
+```python
+# app/bilibili/schemas.py
+
+# 视频类型
+VIDEO_TYPE_DISPLAY = {
+    1: "自制",
+    2: "转载"
+}
+
+# 动态类型
+DYNAMIC_TYPE_DISPLAY = {
+    1: "转发动态",
+    2: "图文动态",
+    4: "文字动态",
+    8: "视频动态",
+    16: "小视频",
+    64: "专栏动态",
+    256: "音频动态",
+    2048: "普通动态"
+}
+
+# 资源类型
+RESOURCE_TYPE_DISPLAY = {
+    "video": "视频",
+    "dynamic": "动态",
+    "article": "专栏"
+}
+
+# 同步频率
+SYNC_FREQUENCY_DISPLAY = {
+    "1h": "每小时",
+    "6h": "每6小时",
+    "1d": "每天",
+    "1w": "每周",
+    "manual": "手动"
+}
+
+# 同步状态
+SYNC_STATUS_DISPLAY = {
+    "running": "同步中",
+    "success": "成功",
+    "failed": "失败"
+}
+```
+
 #### 1. bilibili-api 客户端封装（client.py）
 
 **BilibiliClient 类：**
 ```python
+from bilibili_api import user, video, Credential
+from bilibili_api.exceptions import ResponseCodeException
+
 class BilibiliClient:
     def __init__(self, credentials: dict, auth_type: str):
         """初始化客户端，根据 auth_type 设置凭证"""
+        self.auth_type = auth_type
+        self.credential = self._create_credential(credentials)
+        
+    def _create_credential(self, credentials: dict) -> Credential:
+        """根据凭证类型创建 Credential 对象"""
+        if self.auth_type == "cookie":
+            # 解析 Cookie 字符串
+            cookie_dict = self._parse_cookie(credentials["cookie"])
+            return Credential(
+                sessdata=cookie_dict.get("SESSDATA"),
+                bili_jct=cookie_dict.get("bili_jct"),
+                buvid3=cookie_dict.get("buvid3")
+            )
+        elif self.auth_type in ["sessdata", "qrcode"]:
+            return Credential(
+                sessdata=credentials["sessdata"],
+                bili_jct=credentials["bili_jct"],
+                buvid3=credentials.get("buvid3")
+            )
         
     async def verify_credentials(self) -> bool:
         """验证凭证是否有效"""
+        try:
+            # 尝试获取当前用户信息
+            u = user.User(credential=self.credential)
+            await u.get_self_info()
+            return True
+        except ResponseCodeException:
+            return False
         
     async def get_user_info(self, uid: str) -> dict:
         """获取 UP主信息（昵称、头像、粉丝数等）"""
+        u = user.User(uid=int(uid), credential=self.credential)
+        info = await u.get_user_info()
+        return {
+            "uid": uid,
+            "name": info["name"],
+            "avatar": info["face"],
+            "follower_count": info["follower"],
+            "description": info.get("sign", "")
+        }
         
     async def check_uploader_exists(self, uid: str) -> bool:
         """检查 UP主是否存在"""
+        try:
+            u = user.User(uid=int(uid), credential=self.credential)
+            await u.get_user_info()
+            return True
+        except ResponseCodeException as e:
+            if e.code == -404:  # 用户不存在
+                return False
+            raise
         
     async def get_user_videos(
         self, uid: str, page: int = 1, page_size: int = 50
     ) -> List[dict]:
         """获取 UP主视频列表"""
+        u = user.User(uid=int(uid), credential=self.credential)
+        videos = await u.get_videos(pn=page, ps=page_size)
+        
+        return [
+            self._transform_video_data(v) 
+            for v in videos["list"]["vlist"]
+        ]
         
     async def get_user_dynamics(
         self, uid: str, offset: str = None
     ) -> List[dict]:
         """获取 UP主动态"""
+        u = user.User(uid=int(uid), credential=self.credential)
+        dynamics = await u.get_dynamics(offset=offset)
+        
+        return [
+            self._transform_dynamic_data(d)
+            for d in dynamics["cards"]
+        ]
         
     async def get_user_articles(
         self, uid: str, page: int = 1
     ) -> List[dict]:
         """获取 UP主专栏"""
+        u = user.User(uid=int(uid), credential=self.credential)
+        articles = await u.get_articles(pn=page)
+        
+        return [
+            self._transform_article_data(a)
+            for a in articles["articles"]
+        ]
         
     def _transform_video_data(self, raw: dict) -> dict:
         """转换视频数据，添加 *_display 字段"""
+        from app.bilibili.schemas import VIDEO_TYPE_DISPLAY
+        
+        return {
+            "resource_type": "video",
+            "resource_id": raw["bvid"],
+            "title": raw["title"],
+            "cover_url": raw["pic"],
+            "summary": raw["description"][:100],
+            "full_content": raw["description"],
+            "published_at": datetime.fromtimestamp(raw["created"]),
+            "metadata": {
+                "bvid": raw["bvid"],
+                "aid": raw["aid"],
+                "video_type": raw.get("copyright", 1),
+                "video_type_display": VIDEO_TYPE_DISPLAY.get(raw.get("copyright", 1), "未知"),
+                "play_count": raw["play"],
+                "like_count": raw.get("like", 0),
+                "coin_count": raw.get("coin", 0),
+                "duration": raw["length"],
+                "url": f"https://www.bilibili.com/video/{raw['bvid']}"
+            }
+        }
         
     def _transform_dynamic_data(self, raw: dict) -> dict:
         """转换动态数据"""
+        from app.bilibili.schemas import DYNAMIC_TYPE_DISPLAY
+        
+        card = json.loads(raw["card"])
+        dynamic_type = raw["desc"]["type"]
+        
+        return {
+            "resource_type": "dynamic",
+            "resource_id": str(raw["desc"]["dynamic_id"]),
+            "title": card.get("title", "动态"),
+            "cover_url": card.get("pic", ""),
+            "summary": card.get("content", card.get("dynamic", ""))[:100],
+            "full_content": card.get("content", card.get("dynamic", "")),
+            "published_at": datetime.fromtimestamp(raw["desc"]["timestamp"]),
+            "attachments": self._extract_dynamic_attachments(card),
+            "metadata": {
+                "dynamic_id": raw["desc"]["dynamic_id"],
+                "dynamic_type": dynamic_type,
+                "dynamic_type_display": DYNAMIC_TYPE_DISPLAY.get(dynamic_type, "未知"),
+                "like_count": raw["desc"].get("like", 0),
+                "url": f"https://t.bilibili.com/{raw['desc']['dynamic_id']}"
+            }
+        }
+        
+    def _transform_article_data(self, raw: dict) -> dict:
+        """转换专栏数据"""
+        return {
+            "resource_type": "article",
+            "resource_id": str(raw["id"]),
+            "title": raw["title"],
+            "cover_url": raw["image_urls"][0] if raw["image_urls"] else "",
+            "summary": raw["summary"],
+            "full_content": raw["summary"],  # 完整内容需要单独获取
+            "published_at": datetime.fromtimestamp(raw["publish_time"]),
+            "metadata": {
+                "article_id": raw["id"],
+                "view_count": raw["view"],
+                "like_count": raw["like"],
+                "url": f"https://www.bilibili.com/read/cv{raw['id']}"
+            }
+        }
+        
+    def _extract_dynamic_attachments(self, card: dict) -> dict:
+        """提取动态附件信息"""
+        attachments = {"images": [], "documents": []}
+        
+        # 提取图片
+        if "pictures" in card:
+            attachments["images"] = [p["img_src"] for p in card["pictures"]]
+        
+        return attachments
+        
+    def _parse_cookie(self, cookie_str: str) -> dict:
+        """解析 Cookie 字符串"""
+        cookie_dict = {}
+        for item in cookie_str.split(";"):
+            if "=" in item:
+                key, value = item.strip().split("=", 1)
+                cookie_dict[key] = value
+        return cookie_dict
 ```
 
 **错误处理：**
@@ -265,10 +461,36 @@ class BilibiliClient:
 - 限流错误：延迟 5 秒后重试
 - UP主不存在：抛出 `UploaderNotFoundError`
 
+**自定义异常（app/bilibili/exceptions.py）：**
+```python
+class BilibiliAPIError(Exception):
+    """Bilibili API 基础异常"""
+    pass
+
+class AuthenticationError(BilibiliAPIError):
+    """认证失败"""
+    pass
+
+class RateLimitError(BilibiliAPIError):
+    """被限流"""
+    pass
+
+class UploaderNotFoundError(BilibiliAPIError):
+    """UP主不存在"""
+    pass
+
+class NetworkError(BilibiliAPIError):
+    """网络错误"""
+    pass
+```
+
 #### 2. 同步服务（sync_service.py）
 
 **SyncService 类：**
 ```python
+import random
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 class SyncService:
     def __init__(self, session: Session, ws_manager: ConnectionManager):
         self.session = session
@@ -281,41 +503,307 @@ class SyncService:
         同步单个订阅
         返回 sync_log_id
         """
+        subscription = self.session.get(Subscription, subscription_id)
+        if not subscription:
+            raise ValueError("订阅不存在")
+            
         # 1. 创建同步日志记录（status=running）
-        # 2. 检查 UP主是否存在
-        # 3. 检查账户凭证是否有效
-        # 4. 获取失败资源列表，优先重试
-        # 5. 根据 sync_config 获取资源
-        # 6. 分批获取（每批 50 条，延迟 3-5 秒）
-        # 7. 每条资源：
-        #    - 检查是否已存在（按 resource_id）
-        #    - 检查发布时间是否 > last_sync_at
-        #    - 保存到数据库
-        #    - 实时推送日志到 WebSocket
-        #    - 失败则记录到 failed_resources
-        # 8. 更新同步日志（status=success/failed）
-        # 9. 更新 subscription.last_sync_at
+        sync_log = SyncLog(
+            subscription_id=subscription_id,
+            sync_type=sync_type,
+            status="running",
+            start_time=datetime.now(),
+            details=[]
+        )
+        self.session.add(sync_log)
+        self.session.commit()
+        
+        await self._send_log(subscription_id, {
+            "timestamp": datetime.now().isoformat(),
+            "level": "INFO",
+            "message": f"开始同步 UP主：{subscription.uploader_name} (UID: {subscription.uploader_uid})"
+        })
+        
+        try:
+            # 2. 检查 UP主是否存在
+            account = self.session.get(Account, subscription.account_id)
+            credentials = decrypt_credentials(account.credentials)
+            client = BilibiliClient(credentials, account.auth_type)
+            
+            if not await client.check_uploader_exists(subscription.uploader_uid):
+                raise UploaderNotFoundError(f"UP主 {subscription.uploader_uid} 不存在")
+            
+            # 3. 检查账户凭证是否有效
+            if not await client.verify_credentials():
+                account.is_active = False
+                self.session.commit()
+                raise AuthenticationError("账户凭证已失效")
+            
+            # 4. 获取失败资源列表，优先重试
+            success_retry, failed_retry = await self._retry_failed_resources(subscription_id, client)
+            
+            # 5. 根据 sync_config 获取资源
+            total_success = success_retry
+            total_failed = failed_retry
+            total_skipped = 0
+            
+            is_first_sync = subscription.last_sync_at is None
+            
+            for resource_type in subscription.sync_config["resource_types"]:
+                await self._send_log(subscription_id, {
+                    "timestamp": datetime.now().isoformat(),
+                    "level": "INFO",
+                    "message": f"正在获取{resource_type}列表..."
+                })
+                
+                # 6. 分批获取
+                offset = 0
+                fetched_count = 0
+                batch_size = subscription.sync_config.get("batch_size", 50)
+                history_limit = subscription.sync_config.get("history_limit")
+                
+                while True:
+                    # 检查是否达到历史限制
+                    if is_first_sync and history_limit and fetched_count >= history_limit:
+                        break
+                    
+                    resources = await self._fetch_resources_batch(
+                        client, subscription, resource_type, offset
+                    )
+                    
+                    if not resources:
+                        break
+                    
+                    await self._send_log(subscription_id, {
+                        "timestamp": datetime.now().isoformat(),
+                        "level": "INFO",
+                        "message": f"获取到 {len(resources)} 条{resource_type}"
+                    })
+                    
+                    # 7. 处理每条资源
+                    for resource_data in resources:
+                        # 检查发布时间（增量同步）
+                        if not is_first_sync and subscription.last_sync_at:
+                            if resource_data["published_at"] <= subscription.last_sync_at:
+                                # 已经同步过了，停止
+                                break
+                        
+                        # 保存资源
+                        success = await self._save_resource(
+                            subscription_id, resource_data, client
+                        )
+                        
+                        if success:
+                            total_success += 1
+                        else:
+                            total_failed += 1
+                    
+                    fetched_count += len(resources)
+                    offset += batch_size
+                    
+                    # 延迟 3-5 秒（随机）
+                    delay = random.uniform(3, 5)
+                    await self._send_log(subscription_id, {
+                        "timestamp": datetime.now().isoformat(),
+                        "level": "INFO",
+                        "message": f"延迟 {delay:.1f} 秒后继续获取..."
+                    })
+                    await asyncio.sleep(delay)
+            
+            # 8. 更新同步日志（status=success）
+            sync_log.status = "success"
+            sync_log.end_time = datetime.now()
+            sync_log.success_count = total_success
+            sync_log.failed_count = total_failed
+            sync_log.skipped_count = total_skipped
+            
+            # 9. 更新 subscription.last_sync_at
+            subscription.last_sync_at = datetime.now()
+            
+            self.session.commit()
+            
+            await self._send_log(subscription_id, {
+                "timestamp": datetime.now().isoformat(),
+                "level": "INFO",
+                "message": f"同步完成：成功 {total_success} 条，跳过 {total_skipped} 条，失败 {total_failed} 条"
+            })
+            
+            return sync_log.id
+            
+        except Exception as e:
+            # 更新同步日志（status=failed）
+            sync_log.status = "failed"
+            sync_log.end_time = datetime.now()
+            sync_log.error_message = str(e)
+            self.session.commit()
+            
+            await self._send_log(subscription_id, {
+                "timestamp": datetime.now().isoformat(),
+                "level": "ERROR",
+                "message": f"同步失败：{str(e)}",
+                "stack_trace": traceback.format_exc()
+            })
+            
+            raise
         
     async def _fetch_resources_batch(
         self, client: BilibiliClient, subscription: Subscription, 
         resource_type: str, offset: int
     ) -> List[dict]:
         """分批获取资源"""
+        batch_size = subscription.sync_config.get("batch_size", 50)
         
+        if resource_type == "video":
+            page = offset // batch_size + 1
+            return await client.get_user_videos(
+                subscription.uploader_uid, page=page, page_size=batch_size
+            )
+        elif resource_type == "dynamic":
+            return await client.get_user_dynamics(
+                subscription.uploader_uid, offset=str(offset) if offset else None
+            )
+        elif resource_type == "article":
+            page = offset // batch_size + 1
+            return await client.get_user_articles(
+                subscription.uploader_uid, page=page
+            )
+        
+        return []
+        
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=4)
+    )
     async def _save_resource(
-        self, subscription_id: UUID, resource_data: dict
+        self, subscription_id: UUID, resource_data: dict, client: BilibiliClient
     ) -> bool:
         """保存单个资源，返回是否成功"""
+        try:
+            # 检查是否已存在
+            existing = self.session.exec(
+                select(Resource).where(
+                    Resource.subscription_id == subscription_id,
+                    Resource.resource_id == resource_data["resource_id"]
+                )
+            ).first()
+            
+            if existing:
+                await self._send_log(subscription_id, {
+                    "timestamp": datetime.now().isoformat(),
+                    "level": "INFO",
+                    "type": resource_data["resource_type"],
+                    "resource_id": resource_data["resource_id"],
+                    "title": resource_data["title"],
+                    "published_at": resource_data["published_at"].isoformat(),
+                    "status": "skipped",
+                    "message": "⊙ 已存在，跳过"
+                })
+                return True
+            
+            # 创建新资源
+            resource = Resource(
+                subscription_id=subscription_id,
+                **resource_data
+            )
+            self.session.add(resource)
+            self.session.commit()
+            
+            # 从失败表中移除（如果存在）
+            self.session.exec(
+                delete(FailedResource).where(
+                    FailedResource.subscription_id == subscription_id,
+                    FailedResource.resource_id == resource_data["resource_id"]
+                )
+            )
+            self.session.commit()
+            
+            await self._send_log(subscription_id, {
+                "timestamp": datetime.now().isoformat(),
+                "level": "INFO",
+                "type": resource_data["resource_type"],
+                "resource_id": resource_data["resource_id"],
+                "title": resource_data["title"],
+                "published_at": resource_data["published_at"].isoformat(),
+                "status": "success",
+                "message": "✓ 保存成功"
+            })
+            
+            return True
+            
+        except Exception as e:
+            # 记录到失败表
+            failed = FailedResource(
+                subscription_id=subscription_id,
+                resource_id=resource_data["resource_id"],
+                resource_type=resource_data["resource_type"],
+                failed_at=datetime.now(),
+                retry_count=0,
+                last_error=str(e),
+                metadata=resource_data
+            )
+            self.session.merge(failed)  # 使用 merge 处理重复
+            self.session.commit()
+            
+            await self._send_log(subscription_id, {
+                "timestamp": datetime.now().isoformat(),
+                "level": "ERROR",
+                "type": resource_data["resource_type"],
+                "resource_id": resource_data["resource_id"],
+                "title": resource_data["title"],
+                "status": "failed",
+                "error": str(e),
+                "stack_trace": traceback.format_exc()
+            })
+            
+            return False
         
     async def _retry_failed_resources(
-        self, subscription_id: UUID
+        self, subscription_id: UUID, client: BilibiliClient
     ) -> Tuple[int, int]:
         """重试失败的资源，返回 (成功数, 失败数)"""
+        MAX_RETRY_COUNT = 5
+        
+        failed_resources = self.session.exec(
+            select(FailedResource).where(
+                FailedResource.subscription_id == subscription_id,
+                FailedResource.retry_count < MAX_RETRY_COUNT
+            )
+        ).all()
+        
+        if not failed_resources:
+            return (0, 0)
+        
+        await self._send_log(subscription_id, {
+            "timestamp": datetime.now().isoformat(),
+            "level": "INFO",
+            "message": f"正在重试 {len(failed_resources)} 个失败资源..."
+        })
+        
+        success_count = 0
+        failed_count = 0
+        
+        for failed in failed_resources:
+            # 更新重试次数
+            failed.retry_count += 1
+            self.session.commit()
+            
+            # 尝试保存
+            success = await self._save_resource(
+                subscription_id, failed.metadata, client
+            )
+            
+            if success:
+                success_count += 1
+            else:
+                failed_count += 1
+        
+        return (success_count, failed_count)
         
     async def _send_log(
         self, subscription_id: UUID, log_entry: dict
     ):
         """发送日志到 WebSocket"""
+        await self.ws_manager.broadcast(subscription_id, log_entry)
 ```
 
 **同步逻辑细节：**
@@ -350,7 +838,7 @@ scheduler = AsyncIOScheduler(
     jobstores={
         'default': SQLAlchemyJobStore(url=settings.DATABASE_URL)
     },
-    timezone='Asia/Shanghai'
+    timezone=settings.APSCHEDULER_TIMEZONE  # 从环境变量读取
 )
 
 def init_scheduler(session: Session):
@@ -384,14 +872,41 @@ def add_sync_job(subscription: Subscription):
     
 def remove_sync_job(subscription_id: UUID):
     """移除定时任务"""
-    scheduler.remove_job(f"sync_{subscription_id}")
-```
+    try:
+        scheduler.remove_job(f"sync_{subscription_id}")
+    except JobLookupError:
+        pass  # 任务不存在，忽略
 
-**频率映射：**
-- `1h` → `CronTrigger(hour='*')`
-- `6h` → `CronTrigger(hour='*/6')`
-- `1d` → `CronTrigger(hour='2')`  # 凌晨 2 点
-- `1w` → `CronTrigger(day_of_week='mon', hour='2')`
+def frequency_to_trigger(frequency: str):
+    """将频率转换为 APScheduler trigger"""
+    from apscheduler.triggers.cron import CronTrigger
+    
+    if frequency == "1h":
+        return CronTrigger(hour='*', minute='0')
+    elif frequency == "6h":
+        return CronTrigger(hour='*/6', minute='0')
+    elif frequency == "1d":
+        return CronTrigger(hour='2', minute='0')  # 凌晨 2 点
+    elif frequency == "1w":
+        return CronTrigger(day_of_week='mon', hour='2', minute='0')
+    else:
+        raise ValueError(f"不支持的频率: {frequency}")
+
+# 在 main.py 中添加生命周期管理
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时启动调度器"""
+    scheduler.start()
+    with Session(engine) as session:
+        init_scheduler(session)
+    logger.info("APScheduler 已启动")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时停止调度器"""
+    scheduler.shutdown()
+    logger.info("APScheduler 已停止")
+```
 
 #### 4. WebSocket 管理（websocket.py）
 
@@ -433,33 +948,75 @@ class ConnectionManager:
 
 **WebSocket 路由：**
 ```python
+from fastapi import WebSocket, WebSocketDisconnect, Query
+from jose import jwt, JWTError
+
+async def get_current_user_ws(
+    websocket: WebSocket,
+    token: str = Query(...)
+) -> User:
+    """WebSocket 认证依赖"""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        user_id = payload.get("sub")
+        if not user_id:
+            await websocket.close(code=4001, reason="Invalid token")
+            raise WebSocketDisconnect()
+        
+        with Session(engine) as session:
+            user = session.get(User, UUID(user_id))
+            if not user:
+                await websocket.close(code=4001, reason="User not found")
+                raise WebSocketDisconnect()
+            return user
+    except JWTError:
+        await websocket.close(code=4001, reason="Invalid token")
+        raise WebSocketDisconnect()
+
 @router.websocket("/ws/sync-logs/{subscription_id}")
 async def websocket_sync_logs(
     websocket: WebSocket,
     subscription_id: UUID,
-    current_user: User = Depends(get_current_user_ws)
+    token: str = Query(...),  # 从查询参数获取 token
 ):
+    # 认证
+    try:
+        current_user = await get_current_user_ws(websocket, token)
+    except WebSocketDisconnect:
+        return
+    
     # 权限检查
-    subscription = session.get(Subscription, subscription_id)
-    if not subscription:
-        await websocket.close(code=4004)
-        return
-        
-    if not current_user.is_superuser and subscription.user_id != current_user.id:
-        await websocket.close(code=4003)
-        return
-        
+    with Session(engine) as session:
+        subscription = session.get(Subscription, subscription_id)
+        if not subscription:
+            await websocket.close(code=4004, reason="Subscription not found")
+            return
+            
+        if not current_user.is_superuser and subscription.user_id != current_user.id:
+            await websocket.close(code=4003, reason="Permission denied")
+            return
+    
     await ws_manager.connect(websocket, subscription_id)
     
     try:
         # 发送历史日志（最近一次同步的日志）
-        latest_log = get_latest_sync_log(subscription_id)
-        if latest_log:
-            await websocket.send_json(latest_log.details)
+        with Session(engine) as session:
+            latest_log = session.exec(
+                select(SyncLog)
+                .where(SyncLog.subscription_id == subscription_id)
+                .order_by(SyncLog.start_time.desc())
+            ).first()
+            
+            if latest_log and latest_log.details:
+                for log_entry in latest_log.details:
+                    await websocket.send_json(log_entry)
             
         # 保持连接，等待新日志
         while True:
-            await websocket.receive_text()  # 心跳
+            # 接收心跳消息
+            data = await websocket.receive_text()
+            # 可以验证心跳内容，这里简单忽略
+            
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, subscription_id)
 ```
@@ -630,13 +1187,70 @@ class SyncConfig(BaseModel):
     resource_types: List[Literal["video", "dynamic", "article"]] = ["video", "dynamic", "article"]
     sync_frequency: Literal["1h", "6h", "1d", "1w", "manual"] = "6h"
     history_limit: Optional[int] = 50  # null 表示全量
+    batch_size: int = 50  # 每次获取数量
 
-# 流程：
-# 1. 检查 UP主是否存在（调用 bilibili-api）
-# 2. 检查是否已订阅
-#    - 已存在：返回 409，提示用户选择"取消"或"重新配置"
-# 3. 获取 UP主信息并保存
-# 4. 添加定时任务
+# 实现示例（router.py）
+@router.post("/subscriptions")
+async def create_subscription(
+    data: SubscriptionCreate,
+    current_user: User = Depends(require_permission("bilibili:subscription:create")),
+    session: Session = Depends(get_session)
+):
+    # 1. 检查 UP主是否存在
+    account = session.get(Account, data.account_id)
+    if not account or account.user_id != current_user.id:
+        raise HTTPException(404, "账户不存在")
+    
+    credentials = decrypt_credentials(account.credentials)
+    client = BilibiliClient(credentials, account.auth_type)
+    
+    if not await client.check_uploader_exists(data.uploader_uid):
+        raise HTTPException(400, "该 UP主不存在或 UID 错误")
+    
+    # 2. 检查是否已订阅
+    existing = session.exec(
+        select(Subscription).where(
+            Subscription.user_id == current_user.id,
+            Subscription.uploader_uid == data.uploader_uid
+        )
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "该 UP主已存在订阅",
+                "existing_subscription": {
+                    "id": str(existing.id),
+                    "uploader_name": existing.uploader_name,
+                    "sync_config": existing.sync_config,
+                    "created_at": existing.created_at.isoformat()
+                }
+            }
+        )
+    
+    # 3. 获取 UP主信息并保存
+    uploader_info = await client.get_user_info(data.uploader_uid)
+    
+    subscription = Subscription(
+        user_id=current_user.id,
+        account_id=data.account_id,
+        uploader_uid=data.uploader_uid,
+        uploader_name=uploader_info["name"],
+        uploader_avatar=uploader_info["avatar"],
+        uploader_info=uploader_info,
+        sync_config=data.sync_config.dict()
+    )
+    
+    session.add(subscription)
+    session.commit()
+    session.refresh(subscription)
+    
+    # 4. 添加定时任务
+    from app.bilibili.scheduler import add_sync_job
+    add_sync_job(subscription)
+    
+    return subscription
 ```
 
 **POST /bilibili/subscriptions/{id}/sync** - 手动触发同步
@@ -907,12 +1521,17 @@ export default defineConfig({
 
 ```typescript
 import { useWebSocket } from 'react-use-websocket';
+import { useAuth } from '@/hooks/use-auth';
 
 function SyncLogDialog({ subscriptionId }: { subscriptionId: string }) {
+  const { token } = useAuth();  // 获取认证 token
+  
   // 根据环境构建 WebSocket URL
   const wsUrl = import.meta.env.DEV
-    ? `ws://localhost:8173/backend/api/v1/bilibili/ws/sync-logs/${subscriptionId}`
-    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}://${window.location.host}/api/v1/bilibili/ws/sync-logs/${subscriptionId}`;
+    ? `ws://localhost:5173/backend/api/v1/bilibili/ws/sync-logs/${subscriptionId}?token=${token}`
+    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}://${window.location.host}/api/v1/bilibili/ws/sync-logs/${subscriptionId}?token=${token}`;
+  
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   
   const { lastMessage, readyState } = useWebSocket(wsUrl, {
     shouldReconnect: () => true,
@@ -968,8 +1587,9 @@ export function AppSidebar() {
   const { user: currentUser } = useAuth()
   
   // 检查用户是否有 Bilibili 权限
+  // 假设 User 类型包含 permissions: string[] 字段
   const hasBilibiliAccess = currentUser?.permissions?.some(
-    p => p.startsWith("bilibili:")
+    (p: string) => p.startsWith("bilibili:")
   )
   
   const items = [
@@ -1000,6 +1620,17 @@ export function AppSidebar() {
 }
 ```
 
+**User 类型定义（frontend/src/types/user.ts）：**
+```typescript
+export interface User {
+  id: string
+  email: string
+  full_name: string
+  is_superuser: boolean
+  permissions: string[]  // 权限代码列表，如 ["bilibili:account:view", ...]
+}
+```
+
 ---
 
 ## 部署和初始化
@@ -1023,11 +1654,215 @@ alembic revision --autogenerate -m "Add Bilibili and RBAC tables"
 alembic upgrade head
 ```
 
+**迁移文件示例（alembic/versions/xxxx_add_bilibili_and_rbac_tables.py）：**
+
+```python
+"""Add Bilibili and RBAC tables
+
+Revision ID: xxxx
+Revises: yyyy
+Create Date: 2026-05-24 10:00:00.000000
+
+"""
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+
+# revision identifiers, used by Alembic.
+revision = 'xxxx'
+down_revision = 'yyyy'
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    # 1. 创建 RBAC 权限表
+    op.create_table('permissions',
+        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
+        sa.Column('code', sa.String(length=100), nullable=False),
+        sa.Column('name', sa.String(length=100), nullable=False),
+        sa.Column('module', sa.String(length=50), nullable=False),
+        sa.Column('description', sa.Text(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('code')
+    )
+    op.create_index('idx_permissions_module', 'permissions', ['module'])
+    
+    # 2. 创建角色表
+    op.create_table('roles',
+        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
+        sa.Column('name', sa.String(length=50), nullable=False),
+        sa.Column('description', sa.Text(), nullable=True),
+        sa.Column('is_system', sa.Boolean(), server_default=sa.text('false'), nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('name')
+    )
+    
+    # 3. 创建角色-权限关联表
+    op.create_table('role_permissions',
+        sa.Column('role_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('permission_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.ForeignKeyConstraint(['permission_id'], ['permissions.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['role_id'], ['roles.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('role_id', 'permission_id')
+    )
+    
+    # 4. 创建用户-角色关联表
+    op.create_table('user_roles',
+        sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('role_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+        sa.ForeignKeyConstraint(['role_id'], ['roles.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('user_id', 'role_id')
+    )
+    
+    # 5. 创建 Bilibili 账户表
+    op.create_table('bilibili_accounts',
+        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
+        sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('account_name', sa.String(length=100), nullable=False),
+        sa.Column('auth_type', sa.String(length=20), nullable=False),
+        sa.Column('credentials', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column('is_active', sa.Boolean(), server_default=sa.text('true'), nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+        sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index('idx_bilibili_accounts_user_id', 'bilibili_accounts', ['user_id'])
+    
+    # 6. 创建 UP主订阅表
+    op.create_table('bilibili_uploader_subscriptions',
+        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
+        sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('account_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('uploader_uid', sa.String(length=50), nullable=False),
+        sa.Column('uploader_name', sa.String(length=100), nullable=False),
+        sa.Column('uploader_avatar', sa.Text(), nullable=True),
+        sa.Column('uploader_info', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('sync_config', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column('is_paused', sa.Boolean(), server_default=sa.text('false'), nullable=True),
+        sa.Column('last_sync_at', sa.DateTime(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+        sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+        sa.ForeignKeyConstraint(['account_id'], ['bilibili_accounts.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('user_id', 'uploader_uid')
+    )
+    op.create_index('idx_subscriptions_user_id', 'bilibili_uploader_subscriptions', ['user_id'])
+    op.create_index('idx_subscriptions_uploader_uid', 'bilibili_uploader_subscriptions', ['uploader_uid'])
+    
+    # 7. 创建资源表
+    op.create_table('bilibili_resources',
+        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
+        sa.Column('subscription_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('resource_type', sa.String(length=20), nullable=False),
+        sa.Column('resource_id', sa.String(length=50), nullable=False),
+        sa.Column('title', sa.Text(), nullable=False),
+        sa.Column('cover_url', sa.Text(), nullable=True),
+        sa.Column('summary', sa.Text(), nullable=True),
+        sa.Column('full_content', sa.Text(), nullable=True),
+        sa.Column('attachments', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column('published_at', sa.DateTime(), nullable=False),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+        sa.ForeignKeyConstraint(['subscription_id'], ['bilibili_uploader_subscriptions.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('subscription_id', 'resource_id')
+    )
+    op.create_index('idx_resources_subscription_id', 'bilibili_resources', ['subscription_id'])
+    op.create_index('idx_resources_published_at', 'bilibili_resources', ['published_at'], postgresql_ops={'published_at': 'DESC'})
+    op.create_index('idx_resources_type', 'bilibili_resources', ['resource_type'])
+    
+    # 8. 创建同步日志表
+    op.create_table('sync_logs',
+        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
+        sa.Column('subscription_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('sync_type', sa.String(length=20), nullable=False),
+        sa.Column('status', sa.String(length=20), nullable=False),
+        sa.Column('start_time', sa.DateTime(), nullable=False),
+        sa.Column('end_time', sa.DateTime(), nullable=True),
+        sa.Column('total_count', sa.Integer(), server_default=sa.text('0'), nullable=True),
+        sa.Column('success_count', sa.Integer(), server_default=sa.text('0'), nullable=True),
+        sa.Column('failed_count', sa.Integer(), server_default=sa.text('0'), nullable=True),
+        sa.Column('skipped_count', sa.Integer(), server_default=sa.text('0'), nullable=True),
+        sa.Column('error_message', sa.Text(), nullable=True),
+        sa.Column('details', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.ForeignKeyConstraint(['subscription_id'], ['bilibili_uploader_subscriptions.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index('idx_sync_logs_subscription_id', 'sync_logs', ['subscription_id'])
+    op.create_index('idx_sync_logs_start_time', 'sync_logs', ['start_time'], postgresql_ops={'start_time': 'DESC'})
+    
+    # 9. 创建失败资源表
+    op.create_table('failed_resources',
+        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
+        sa.Column('subscription_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('resource_id', sa.String(length=50), nullable=False),
+        sa.Column('resource_type', sa.String(length=20), nullable=False),
+        sa.Column('failed_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+        sa.Column('retry_count', sa.Integer(), server_default=sa.text('0'), nullable=True),
+        sa.Column('last_error', sa.Text(), nullable=True),
+        sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.ForeignKeyConstraint(['subscription_id'], ['bilibili_uploader_subscriptions.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('subscription_id', 'resource_id')
+    )
+    op.create_index('idx_failed_resources_subscription_id', 'failed_resources', ['subscription_id'])
+    op.create_index('idx_failed_resources_failed_at', 'failed_resources', ['failed_at'], postgresql_ops={'failed_at': 'DESC'})
+
+
+def downgrade():
+    # 按相反顺序删除表
+    op.drop_index('idx_failed_resources_failed_at', table_name='failed_resources')
+    op.drop_index('idx_failed_resources_subscription_id', table_name='failed_resources')
+    op.drop_table('failed_resources')
+    
+    op.drop_index('idx_sync_logs_start_time', table_name='sync_logs')
+    op.drop_index('idx_sync_logs_subscription_id', table_name='sync_logs')
+    op.drop_table('sync_logs')
+    
+    op.drop_index('idx_resources_type', table_name='bilibili_resources')
+    op.drop_index('idx_resources_published_at', table_name='bilibili_resources')
+    op.drop_index('idx_resources_subscription_id', table_name='bilibili_resources')
+    op.drop_table('bilibili_resources')
+    
+    op.drop_index('idx_subscriptions_uploader_uid', table_name='bilibili_uploader_subscriptions')
+    op.drop_index('idx_subscriptions_user_id', table_name='bilibili_uploader_subscriptions')
+    op.drop_table('bilibili_uploader_subscriptions')
+    
+    op.drop_index('idx_bilibili_accounts_user_id', table_name='bilibili_accounts')
+    op.drop_table('bilibili_accounts')
+    
+    op.drop_table('user_roles')
+    op.drop_table('role_permissions')
+    op.drop_table('roles')
+    
+    op.drop_index('idx_permissions_module', table_name='permissions')
+    op.drop_table('permissions')
+```
+
 **迁移最佳实践：**
 1. 本地先测试 `upgrade` 和 `downgrade`
 2. 使用 `alembic upgrade head --sql` 预览 SQL
 3. 生产部署前备份数据库
 4. 迁移文件立即提交到 git
+5. 注意：UNIQUE 约束 `(user_id, uploader_uid)` 可能过于严格，如果用户需要用不同账户订阅同一 UP主，考虑改为 `(account_id, uploader_uid)`
+
+**依赖包更新（requirements.txt）：**
+```txt
+# 现有依赖...
+
+# Bilibili 模块新增
+bilibili-api-python>=16.0.0
+apscheduler>=3.10.0
+tenacity>=8.2.0
+cryptography>=41.0.0
+```
 
 ### 2. 权限初始化
 
@@ -1622,4 +2457,395 @@ CREATE TABLE bilibili_comments (
 1. 审查本设计文档
 2. 创建实施计划
 3. 开始开发
+
+---
+
+## RBAC 权限管理前端设计
+
+### 1. 管理员界面扩展
+
+在现有的 `/admin` 页面中添加权限管理功能。
+
+#### 用户管理页面扩展（/admin/users）
+
+**现有功能：**
+- 用户列表
+- 创建/编辑/删除用户
+
+**新增功能：**
+- 为用户分配角色
+
+**组件结构：**
+```
+UsersPage (扩展现有)
+├── UsersTable
+│   ├── 列：邮箱、姓名、超级管理员、角色、操作
+│   └── 操作：编辑、删除、管理角色
+└── UserRolesDialog（新增）
+    ├── 用户信息展示
+    ├── 角色列表（多选框）
+    │   ├── bilibili_user
+    │   ├── bilibili_admin
+    │   └── 其他角色...
+    ├── 当前权限预览（只读）
+    └── 保存按钮
+```
+
+**API 端点：**
+```
+GET    /api/v1/admin/users/{user_id}/roles
+POST   /api/v1/admin/users/{user_id}/roles
+DELETE /api/v1/admin/users/{user_id}/roles/{role_id}
+```
+
+**实现示例：**
+```typescript
+function UserRolesDialog({ userId }: { userId: string }) {
+  const { data: userRoles } = useQuery({
+    queryKey: ['user-roles', userId],
+    queryFn: () => api.get(`/admin/users/${userId}/roles`)
+  })
+  
+  const { data: allRoles } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => api.get('/admin/roles')
+  })
+  
+  const assignRole = useMutation({
+    mutationFn: (roleId: string) => 
+      api.post(`/admin/users/${userId}/roles`, { role_id: roleId })
+  })
+  
+  return (
+    <Dialog>
+      <DialogHeader>
+        <DialogTitle>管理用户角色</DialogTitle>
+      </DialogHeader>
+      <DialogContent>
+        {/* 角色多选框 */}
+        <div className="space-y-2">
+          {allRoles?.map(role => (
+            <div key={role.id} className="flex items-center space-x-2">
+              <Checkbox
+                checked={userRoles?.some(r => r.id === role.id)}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    assignRole.mutate(role.id)
+                  } else {
+                    removeRole.mutate(role.id)
+                  }
+                }}
+              />
+              <Label>{role.name}</Label>
+              <span className="text-sm text-muted-foreground">
+                {role.description}
+              </span>
+            </div>
+          ))}
+        </div>
+        
+        {/* 权限预览 */}
+        <div className="mt-4">
+          <h4 className="text-sm font-medium mb-2">当前权限：</h4>
+          <div className="flex flex-wrap gap-1">
+            {userRoles?.flatMap(r => r.permissions).map(p => (
+              <Badge key={p.code} variant="secondary">
+                {p.name}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+```
+
+#### 角色管理页面（/admin/roles）（新增）
+
+**功能：**
+- 查看所有角色
+- 创建/编辑/删除角色（非系统角色）
+- 为角色分配权限
+
+**组件结构：**
+```
+RolesPage（新增）
+├── RolesTable
+│   ├── 列：角色名、描述、权限数量、系统角色、操作
+│   └── 操作：编辑、删除（系统角色不可删除）、管理权限
+├── CreateRoleDialog
+│   ├── 角色名称
+│   ├── 描述
+│   └── 提交按钮
+└── RolePermissionsDialog
+    ├── 角色信息展示
+    ├── 权限列表（按模块分组）
+    │   ├── Bilibili 模块
+    │   │   ├── bilibili:account:view
+    │   │   ├── bilibili:account:create
+    │   │   └── ...
+    │   └── 其他模块...
+    └── 保存按钮
+```
+
+**API 端点：**
+```
+GET    /api/v1/admin/roles
+POST   /api/v1/admin/roles
+GET    /api/v1/admin/roles/{role_id}
+PUT    /api/v1/admin/roles/{role_id}
+DELETE /api/v1/admin/roles/{role_id}
+GET    /api/v1/admin/roles/{role_id}/permissions
+POST   /api/v1/admin/roles/{role_id}/permissions
+DELETE /api/v1/admin/roles/{role_id}/permissions/{permission_id}
+```
+
+**实现示例：**
+```typescript
+function RolePermissionsDialog({ roleId }: { roleId: string }) {
+  const { data: role } = useQuery({
+    queryKey: ['role', roleId],
+    queryFn: () => api.get(`/admin/roles/${roleId}`)
+  })
+  
+  const { data: allPermissions } = useQuery({
+    queryKey: ['permissions'],
+    queryFn: () => api.get('/admin/permissions')
+  })
+  
+  // 按模块分组
+  const permissionsByModule = groupBy(allPermissions, 'module')
+  
+  return (
+    <Dialog>
+      <DialogHeader>
+        <DialogTitle>管理角色权限 - {role?.name}</DialogTitle>
+      </DialogHeader>
+      <DialogContent className="max-h-[600px] overflow-y-auto">
+        {Object.entries(permissionsByModule).map(([module, permissions]) => (
+          <div key={module} className="mb-4">
+            <h4 className="font-medium mb-2">{module} 模块</h4>
+            <div className="space-y-2 pl-4">
+              {permissions.map(permission => (
+                <div key={permission.id} className="flex items-center space-x-2">
+                  <Checkbox
+                    checked={role?.permissions?.some(p => p.id === permission.id)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        assignPermission.mutate(permission.id)
+                      } else {
+                        removePermission.mutate(permission.id)
+                      }
+                    }}
+                  />
+                  <Label className="text-sm">
+                    {permission.name}
+                    <span className="text-xs text-muted-foreground ml-2">
+                      ({permission.code})
+                    </span>
+                  </Label>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </DialogContent>
+    </Dialog>
+  )
+}
+```
+
+#### 权限列表页面（/admin/permissions）（新增，只读）
+
+**功能：**
+- 查看所有权限
+- 按模块筛选
+- 查看哪些角色拥有该权限
+
+**组件结构：**
+```
+PermissionsPage（新增）
+├── 模块筛选器（Tabs）
+│   ├── 全部
+│   ├── bilibili
+│   └── 其他模块...
+└── PermissionsTable
+    ├── 列：权限代码、名称、描述、拥有该权限的角色
+    └── 只读展示
+```
+
+### 2. 后端 API 实现
+
+**角色管理 API（app/api/routes/admin.py）：**
+
+```python
+@router.get("/roles")
+async def get_roles(
+    current_user: User = Depends(get_current_superuser),
+    session: Session = Depends(get_session)
+):
+    """获取所有角色"""
+    roles = session.exec(select(Role)).all()
+    return roles
+
+@router.post("/roles")
+async def create_role(
+    data: RoleCreate,
+    current_user: User = Depends(get_current_superuser),
+    session: Session = Depends(get_session)
+):
+    """创建角色"""
+    role = Role(**data.dict())
+    session.add(role)
+    session.commit()
+    session.refresh(role)
+    return role
+
+@router.delete("/roles/{role_id}")
+async def delete_role(
+    role_id: UUID,
+    current_user: User = Depends(get_current_superuser),
+    session: Session = Depends(get_session)
+):
+    """删除角色（系统角色不可删除）"""
+    role = session.get(Role, role_id)
+    if not role:
+        raise HTTPException(404, "角色不存在")
+    
+    if role.is_system:
+        raise HTTPException(400, "系统角色不可删除")
+    
+    session.delete(role)
+    session.commit()
+    return {"message": "删除成功"}
+
+@router.get("/roles/{role_id}/permissions")
+async def get_role_permissions(
+    role_id: UUID,
+    current_user: User = Depends(get_current_superuser),
+    session: Session = Depends(get_session)
+):
+    """获取角色的权限"""
+    permissions = session.exec(
+        select(Permission)
+        .join(RolePermission)
+        .where(RolePermission.role_id == role_id)
+    ).all()
+    return permissions
+
+@router.post("/roles/{role_id}/permissions")
+async def assign_permission_to_role(
+    role_id: UUID,
+    data: PermissionAssign,
+    current_user: User = Depends(get_current_superuser),
+    session: Session = Depends(get_session)
+):
+    """为角色分配权限"""
+    role_permission = RolePermission(
+        role_id=role_id,
+        permission_id=data.permission_id
+    )
+    session.add(role_permission)
+    session.commit()
+    return {"message": "分配成功"}
+
+@router.get("/users/{user_id}/roles")
+async def get_user_roles(
+    user_id: UUID,
+    current_user: User = Depends(get_current_superuser),
+    session: Session = Depends(get_session)
+):
+    """获取用户的角色"""
+    roles = session.exec(
+        select(Role)
+        .join(UserRole)
+        .where(UserRole.user_id == user_id)
+    ).all()
+    return roles
+
+@router.post("/users/{user_id}/roles")
+async def assign_role_to_user(
+    user_id: UUID,
+    data: RoleAssign,
+    current_user: User = Depends(get_current_superuser),
+    session: Session = Depends(get_session)
+):
+    """为用户分配角色"""
+    user_role = UserRole(
+        user_id=user_id,
+        role_id=data.role_id
+    )
+    session.add(user_role)
+    session.commit()
+    return {"message": "分配成功"}
+
+@router.get("/permissions")
+async def get_permissions(
+    module: Optional[str] = None,
+    current_user: User = Depends(get_current_superuser),
+    session: Session = Depends(get_session)
+):
+    """获取所有权限"""
+    query = select(Permission)
+    if module:
+        query = query.where(Permission.module == module)
+    
+    permissions = session.exec(query).all()
+    return permissions
+```
+
+### 3. 用户登录时加载权限
+
+**后端修改（app/api/routes/login.py）：**
+
+```python
+@router.post("/login/access-token")
+async def login_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    session: Session = Depends(get_session)
+):
+    # ... 现有的认证逻辑
+    
+    # 加载用户权限
+    permissions = session.exec(
+        select(Permission)
+        .join(RolePermission)
+        .join(UserRole)
+        .where(UserRole.user_id == user.id)
+    ).all()
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "is_superuser": user.is_superuser,
+            "permissions": [p.code for p in permissions]  # 返回权限代码列表
+        }
+    }
+```
+
+### 4. 菜单路由更新
+
+**在 AppSidebar 中添加管理员菜单：**
+
+```typescript
+const items = [
+  ...baseItems,
+  ...(hasBilibiliAccess ? [bilibiliMenu] : []),
+  ...(currentUser?.is_superuser ? [{
+    icon: Users,
+    title: "Admin",
+    children: [
+      { title: "用户管理", path: "/admin/users" },
+      { title: "角色管理", path: "/admin/roles" },      // 新增
+      { title: "权限列表", path: "/admin/permissions" }  // 新增
+    ]
+  }] : [])
+]
+```
+
 
