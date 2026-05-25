@@ -17,7 +17,17 @@ import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
+import { Route as LayoutBilibiliRouteImport } from './routes/_layout/bilibili'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
+import { Route as LayoutBilibiliIndexRouteImport } from './routes/_layout/bilibili/index'
+import { Route as LayoutAdminIndexRouteImport } from './routes/_layout/admin/index'
+import { Route as LayoutBilibiliSubscriptionsRouteImport } from './routes/_layout/bilibili/subscriptions'
+import { Route as LayoutBilibiliAccountsRouteImport } from './routes/_layout/bilibili/accounts'
+import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin/users'
+import { Route as LayoutAdminRolesRouteImport } from './routes/_layout/admin/roles'
+import { Route as LayoutAdminPermissionsRouteImport } from './routes/_layout/admin/permissions'
+import { Route as LayoutBilibiliSubscriptionsIndexRouteImport } from './routes/_layout/bilibili/subscriptions/index'
+import { Route as LayoutBilibiliSubscriptionsSubscriptionIdRouteImport } from './routes/_layout/bilibili/subscriptions/$subscriptionId'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -58,11 +68,64 @@ const LayoutItemsRoute = LayoutItemsRouteImport.update({
   path: '/items',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutBilibiliRoute = LayoutBilibiliRouteImport.update({
+  id: '/bilibili',
+  path: '/bilibili',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutAdminRoute = LayoutAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutBilibiliIndexRoute = LayoutBilibiliIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LayoutBilibiliRoute,
+} as any)
+const LayoutAdminIndexRoute = LayoutAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LayoutAdminRoute,
+} as any)
+const LayoutBilibiliSubscriptionsRoute =
+  LayoutBilibiliSubscriptionsRouteImport.update({
+    id: '/subscriptions',
+    path: '/subscriptions',
+    getParentRoute: () => LayoutBilibiliRoute,
+  } as any)
+const LayoutBilibiliAccountsRoute = LayoutBilibiliAccountsRouteImport.update({
+  id: '/accounts',
+  path: '/accounts',
+  getParentRoute: () => LayoutBilibiliRoute,
+} as any)
+const LayoutAdminUsersRoute = LayoutAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => LayoutAdminRoute,
+} as any)
+const LayoutAdminRolesRoute = LayoutAdminRolesRouteImport.update({
+  id: '/roles',
+  path: '/roles',
+  getParentRoute: () => LayoutAdminRoute,
+} as any)
+const LayoutAdminPermissionsRoute = LayoutAdminPermissionsRouteImport.update({
+  id: '/permissions',
+  path: '/permissions',
+  getParentRoute: () => LayoutAdminRoute,
+} as any)
+const LayoutBilibiliSubscriptionsIndexRoute =
+  LayoutBilibiliSubscriptionsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => LayoutBilibiliSubscriptionsRoute,
+  } as any)
+const LayoutBilibiliSubscriptionsSubscriptionIdRoute =
+  LayoutBilibiliSubscriptionsSubscriptionIdRouteImport.update({
+    id: '/$subscriptionId',
+    path: '/$subscriptionId',
+    getParentRoute: () => LayoutBilibiliSubscriptionsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
@@ -70,19 +133,36 @@ export interface FileRoutesByFullPath {
   '/recover-password': typeof RecoverPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
-  '/admin': typeof LayoutAdminRoute
+  '/admin': typeof LayoutAdminRouteWithChildren
+  '/bilibili': typeof LayoutBilibiliRouteWithChildren
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
+  '/admin/permissions': typeof LayoutAdminPermissionsRoute
+  '/admin/roles': typeof LayoutAdminRolesRoute
+  '/admin/users': typeof LayoutAdminUsersRoute
+  '/bilibili/accounts': typeof LayoutBilibiliAccountsRoute
+  '/bilibili/subscriptions': typeof LayoutBilibiliSubscriptionsRouteWithChildren
+  '/admin/': typeof LayoutAdminIndexRoute
+  '/bilibili/': typeof LayoutBilibiliIndexRoute
+  '/bilibili/subscriptions/$subscriptionId': typeof LayoutBilibiliSubscriptionsSubscriptionIdRoute
+  '/bilibili/subscriptions/': typeof LayoutBilibiliSubscriptionsIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/recover-password': typeof RecoverPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
-  '/admin': typeof LayoutAdminRoute
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
+  '/admin/permissions': typeof LayoutAdminPermissionsRoute
+  '/admin/roles': typeof LayoutAdminRolesRoute
+  '/admin/users': typeof LayoutAdminUsersRoute
+  '/bilibili/accounts': typeof LayoutBilibiliAccountsRoute
+  '/admin': typeof LayoutAdminIndexRoute
+  '/bilibili': typeof LayoutBilibiliIndexRoute
+  '/bilibili/subscriptions/$subscriptionId': typeof LayoutBilibiliSubscriptionsSubscriptionIdRoute
+  '/bilibili/subscriptions': typeof LayoutBilibiliSubscriptionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -91,10 +171,20 @@ export interface FileRoutesById {
   '/recover-password': typeof RecoverPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
-  '/_layout/admin': typeof LayoutAdminRoute
+  '/_layout/admin': typeof LayoutAdminRouteWithChildren
+  '/_layout/bilibili': typeof LayoutBilibiliRouteWithChildren
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
+  '/_layout/admin/permissions': typeof LayoutAdminPermissionsRoute
+  '/_layout/admin/roles': typeof LayoutAdminRolesRoute
+  '/_layout/admin/users': typeof LayoutAdminUsersRoute
+  '/_layout/bilibili/accounts': typeof LayoutBilibiliAccountsRoute
+  '/_layout/bilibili/subscriptions': typeof LayoutBilibiliSubscriptionsRouteWithChildren
+  '/_layout/admin/': typeof LayoutAdminIndexRoute
+  '/_layout/bilibili/': typeof LayoutBilibiliIndexRoute
+  '/_layout/bilibili/subscriptions/$subscriptionId': typeof LayoutBilibiliSubscriptionsSubscriptionIdRoute
+  '/_layout/bilibili/subscriptions/': typeof LayoutBilibiliSubscriptionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -105,18 +195,35 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/admin'
+    | '/bilibili'
     | '/items'
     | '/settings'
+    | '/admin/permissions'
+    | '/admin/roles'
+    | '/admin/users'
+    | '/bilibili/accounts'
+    | '/bilibili/subscriptions'
+    | '/admin/'
+    | '/bilibili/'
+    | '/bilibili/subscriptions/$subscriptionId'
+    | '/bilibili/subscriptions/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/recover-password'
     | '/reset-password'
     | '/signup'
-    | '/admin'
     | '/items'
     | '/settings'
     | '/'
+    | '/admin/permissions'
+    | '/admin/roles'
+    | '/admin/users'
+    | '/bilibili/accounts'
+    | '/admin'
+    | '/bilibili'
+    | '/bilibili/subscriptions/$subscriptionId'
+    | '/bilibili/subscriptions'
   id:
     | '__root__'
     | '/_layout'
@@ -125,9 +232,19 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/_layout/admin'
+    | '/_layout/bilibili'
     | '/_layout/items'
     | '/_layout/settings'
     | '/_layout/'
+    | '/_layout/admin/permissions'
+    | '/_layout/admin/roles'
+    | '/_layout/admin/users'
+    | '/_layout/bilibili/accounts'
+    | '/_layout/bilibili/subscriptions'
+    | '/_layout/admin/'
+    | '/_layout/bilibili/'
+    | '/_layout/bilibili/subscriptions/$subscriptionId'
+    | '/_layout/bilibili/subscriptions/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -196,6 +313,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutItemsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/bilibili': {
+      id: '/_layout/bilibili'
+      path: '/bilibili'
+      fullPath: '/bilibili'
+      preLoaderRoute: typeof LayoutBilibiliRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/admin': {
       id: '/_layout/admin'
       path: '/admin'
@@ -203,18 +327,136 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/bilibili/': {
+      id: '/_layout/bilibili/'
+      path: '/'
+      fullPath: '/bilibili/'
+      preLoaderRoute: typeof LayoutBilibiliIndexRouteImport
+      parentRoute: typeof LayoutBilibiliRoute
+    }
+    '/_layout/admin/': {
+      id: '/_layout/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof LayoutAdminIndexRouteImport
+      parentRoute: typeof LayoutAdminRoute
+    }
+    '/_layout/bilibili/subscriptions': {
+      id: '/_layout/bilibili/subscriptions'
+      path: '/subscriptions'
+      fullPath: '/bilibili/subscriptions'
+      preLoaderRoute: typeof LayoutBilibiliSubscriptionsRouteImport
+      parentRoute: typeof LayoutBilibiliRoute
+    }
+    '/_layout/bilibili/accounts': {
+      id: '/_layout/bilibili/accounts'
+      path: '/accounts'
+      fullPath: '/bilibili/accounts'
+      preLoaderRoute: typeof LayoutBilibiliAccountsRouteImport
+      parentRoute: typeof LayoutBilibiliRoute
+    }
+    '/_layout/admin/users': {
+      id: '/_layout/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof LayoutAdminUsersRouteImport
+      parentRoute: typeof LayoutAdminRoute
+    }
+    '/_layout/admin/roles': {
+      id: '/_layout/admin/roles'
+      path: '/roles'
+      fullPath: '/admin/roles'
+      preLoaderRoute: typeof LayoutAdminRolesRouteImport
+      parentRoute: typeof LayoutAdminRoute
+    }
+    '/_layout/admin/permissions': {
+      id: '/_layout/admin/permissions'
+      path: '/permissions'
+      fullPath: '/admin/permissions'
+      preLoaderRoute: typeof LayoutAdminPermissionsRouteImport
+      parentRoute: typeof LayoutAdminRoute
+    }
+    '/_layout/bilibili/subscriptions/': {
+      id: '/_layout/bilibili/subscriptions/'
+      path: '/'
+      fullPath: '/bilibili/subscriptions/'
+      preLoaderRoute: typeof LayoutBilibiliSubscriptionsIndexRouteImport
+      parentRoute: typeof LayoutBilibiliSubscriptionsRoute
+    }
+    '/_layout/bilibili/subscriptions/$subscriptionId': {
+      id: '/_layout/bilibili/subscriptions/$subscriptionId'
+      path: '/$subscriptionId'
+      fullPath: '/bilibili/subscriptions/$subscriptionId'
+      preLoaderRoute: typeof LayoutBilibiliSubscriptionsSubscriptionIdRouteImport
+      parentRoute: typeof LayoutBilibiliSubscriptionsRoute
+    }
   }
 }
 
+interface LayoutAdminRouteChildren {
+  LayoutAdminPermissionsRoute: typeof LayoutAdminPermissionsRoute
+  LayoutAdminRolesRoute: typeof LayoutAdminRolesRoute
+  LayoutAdminUsersRoute: typeof LayoutAdminUsersRoute
+  LayoutAdminIndexRoute: typeof LayoutAdminIndexRoute
+}
+
+const LayoutAdminRouteChildren: LayoutAdminRouteChildren = {
+  LayoutAdminPermissionsRoute: LayoutAdminPermissionsRoute,
+  LayoutAdminRolesRoute: LayoutAdminRolesRoute,
+  LayoutAdminUsersRoute: LayoutAdminUsersRoute,
+  LayoutAdminIndexRoute: LayoutAdminIndexRoute,
+}
+
+const LayoutAdminRouteWithChildren = LayoutAdminRoute._addFileChildren(
+  LayoutAdminRouteChildren,
+)
+
+interface LayoutBilibiliSubscriptionsRouteChildren {
+  LayoutBilibiliSubscriptionsSubscriptionIdRoute: typeof LayoutBilibiliSubscriptionsSubscriptionIdRoute
+  LayoutBilibiliSubscriptionsIndexRoute: typeof LayoutBilibiliSubscriptionsIndexRoute
+}
+
+const LayoutBilibiliSubscriptionsRouteChildren: LayoutBilibiliSubscriptionsRouteChildren =
+  {
+    LayoutBilibiliSubscriptionsSubscriptionIdRoute:
+      LayoutBilibiliSubscriptionsSubscriptionIdRoute,
+    LayoutBilibiliSubscriptionsIndexRoute:
+      LayoutBilibiliSubscriptionsIndexRoute,
+  }
+
+const LayoutBilibiliSubscriptionsRouteWithChildren =
+  LayoutBilibiliSubscriptionsRoute._addFileChildren(
+    LayoutBilibiliSubscriptionsRouteChildren,
+  )
+
+interface LayoutBilibiliRouteChildren {
+  LayoutBilibiliAccountsRoute: typeof LayoutBilibiliAccountsRoute
+  LayoutBilibiliSubscriptionsRoute: typeof LayoutBilibiliSubscriptionsRouteWithChildren
+  LayoutBilibiliIndexRoute: typeof LayoutBilibiliIndexRoute
+}
+
+const LayoutBilibiliRouteChildren: LayoutBilibiliRouteChildren = {
+  LayoutBilibiliAccountsRoute: LayoutBilibiliAccountsRoute,
+  LayoutBilibiliSubscriptionsRoute:
+    LayoutBilibiliSubscriptionsRouteWithChildren,
+  LayoutBilibiliIndexRoute: LayoutBilibiliIndexRoute,
+}
+
+const LayoutBilibiliRouteWithChildren = LayoutBilibiliRoute._addFileChildren(
+  LayoutBilibiliRouteChildren,
+)
+
 interface LayoutRouteChildren {
-  LayoutAdminRoute: typeof LayoutAdminRoute
+  LayoutAdminRoute: typeof LayoutAdminRouteWithChildren
+  LayoutBilibiliRoute: typeof LayoutBilibiliRouteWithChildren
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
-  LayoutAdminRoute: LayoutAdminRoute,
+  LayoutAdminRoute: LayoutAdminRouteWithChildren,
+  LayoutBilibiliRoute: LayoutBilibiliRouteWithChildren,
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutIndexRoute: LayoutIndexRoute,

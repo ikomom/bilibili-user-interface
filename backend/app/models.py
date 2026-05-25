@@ -10,6 +10,25 @@ def get_datetime_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# RBAC link models (must be defined before User, Permission, Role)
+class RolePermission(SQLModel, table=True):
+    __tablename__ = "role_permissions"
+
+    role_id: uuid.UUID = Field(foreign_key="roles.id", primary_key=True, ondelete="CASCADE")
+    permission_id: uuid.UUID = Field(foreign_key="permissions.id", primary_key=True, ondelete="CASCADE")
+
+
+class UserRole(SQLModel, table=True):
+    __tablename__ = "user_roles"
+
+    user_id: uuid.UUID = Field(foreign_key="user.id", primary_key=True, ondelete="CASCADE")
+    role_id: uuid.UUID = Field(foreign_key="roles.id", primary_key=True, ondelete="CASCADE")
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),
+    )
+
+
 # Shared properties
 class UserBase(SQLModel):
     email: EmailStr = Field(unique=True, index=True, max_length=255)
@@ -54,17 +73,52 @@ class User(UserBase, table=True):
         sa_type=DateTime(timezone=True),  # type: ignore
     )
     items: list["Item"] = Relationship(back_populates="owner", cascade_delete=True)
+    roles: list["Role"] = Relationship(back_populates="users", link_model=UserRole)
 
 
 # Properties to return via API, id is always required
 class UserPublic(UserBase):
     id: uuid.UUID
     created_at: datetime | None = None
+    permissions: list[str] = []
 
 
 class UsersPublic(SQLModel):
     data: list[UserPublic]
     count: int
+
+
+# RBAC models
+class Permission(SQLModel, table=True):
+    __tablename__ = "permissions"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    code: str = Field(max_length=100, unique=True, index=True)
+    name: str = Field(max_length=100)
+    module: str = Field(max_length=50, index=True)
+    description: str | None = None
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),
+    )
+
+    roles: list["Role"] = Relationship(back_populates="permissions", link_model=RolePermission)
+
+
+class Role(SQLModel, table=True):
+    __tablename__ = "roles"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(max_length=50, unique=True, index=True)
+    description: str | None = None
+    is_system: bool = Field(default=False)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),
+    )
+
+    permissions: list[Permission] = Relationship(back_populates="roles", link_model=RolePermission)
+    users: list["User"] = Relationship(back_populates="roles", link_model=UserRole)
 
 
 # Shared properties

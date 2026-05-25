@@ -2,7 +2,10 @@
 // for local environments
 import { OpenAPI, PrivateService } from "../../src/client"
 
-OpenAPI.BASE = `${process.env.VITE_API_URL}`
+const apiBase = process.env.VITE_API_URL || "/backend"
+OpenAPI.BASE = apiBase.startsWith("/")
+  ? `http://localhost:5173${apiBase}`
+  : apiBase
 
 export const createUser = async ({
   email,

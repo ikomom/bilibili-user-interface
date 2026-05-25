@@ -94,6 +94,13 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: EmailStr
     FIRST_SUPERUSER_PASSWORD: str
 
+    BILIBILI_REQUEST_TIMEOUT: int = 30
+    BILIBILI_RETRY_TIMES: int = 3
+    BILIBILI_RATE_LIMIT_DELAY: int = 5
+    BILIBILI_SYNC_BATCH_SIZE: int = 50
+    BILIBILI_CREDENTIALS_ENCRYPTION_KEY: str | None = None
+    APSCHEDULER_TIMEZONE: str = "Asia/Shanghai"
+
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":
             message = (

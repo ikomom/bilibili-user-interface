@@ -1,26 +1,13 @@
-import { useSuspenseQuery } from "@tanstack/react-query"
-import { createFileRoute, redirect } from "@tanstack/react-router"
-import { Suspense } from "react"
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
 
-import { type UserPublic, UsersService } from "@/client"
-import AddUser from "@/components/Admin/AddUser"
-import { columns, type UserTableData } from "@/components/Admin/columns"
-import { DataTable } from "@/components/Common/DataTable"
-import PendingUsers from "@/components/Pending/PendingUsers"
-import useAuth from "@/hooks/useAuth"
-
-function getUsersQueryOptions() {
-  return {
-    queryFn: () => UsersService.readUsers({ skip: 0, limit: 100 }),
-    queryKey: ["users"],
-  }
-}
+import { UsersService } from "@/client"
+import { UsersPage } from "./admin/users"
 
 export const Route = createFileRoute("/_layout/admin")({
-  component: Admin,
+  component: AdminLayout,
   beforeLoad: async () => {
     const user = await UsersService.readUserMe()
-    if (!user.is_superuser) {
+    if (!user?.is_superuser) {
       throw redirect({
         to: "/",
       })
@@ -35,39 +22,10 @@ export const Route = createFileRoute("/_layout/admin")({
   }),
 })
 
-function UsersTableContent() {
-  const { user: currentUser } = useAuth()
-  const { data: users } = useSuspenseQuery(getUsersQueryOptions())
-
-  const tableData: UserTableData[] = users.data.map((user: UserPublic) => ({
-    ...user,
-    isCurrentUser: currentUser?.id === user.id,
-  }))
-
-  return <DataTable columns={columns} data={tableData} />
+function AdminLayout() {
+  return <Outlet />
 }
 
-function UsersTable() {
-  return (
-    <Suspense fallback={<PendingUsers />}>
-      <UsersTableContent />
-    </Suspense>
-  )
-}
-
-function Admin() {
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Users</h1>
-          <p className="text-muted-foreground">
-            Manage user accounts and permissions
-          </p>
-        </div>
-        <AddUser />
-      </div>
-      <UsersTable />
-    </div>
-  )
+export function AdminIndexPage() {
+  return <UsersPage />
 }

@@ -48,6 +48,35 @@ export const columns: ColumnDef<UserTableData>[] = [
     ),
   },
   {
+    accessorKey: "permissions",
+    header: "Permissions",
+    cell: ({ row }) => {
+      const permissions = row.original.permissions ?? []
+      if (row.original.is_superuser || permissions.includes("*")) {
+        return <Badge variant="default">All permissions</Badge>
+      }
+
+      return (
+        <div className="flex max-w-xs flex-wrap gap-1">
+          {permissions.length ? (
+            permissions.slice(0, 3).map((permission) => (
+              <Badge key={permission} variant="outline" className="text-xs">
+                {permission}
+              </Badge>
+            ))
+          ) : (
+            <span className="text-muted-foreground">No roles</span>
+          )}
+          {permissions.length > 3 ? (
+            <Badge variant="secondary" className="text-xs">
+              +{permissions.length - 3}
+            </Badge>
+          ) : null}
+        </div>
+      )
+    },
+  },
+  {
     accessorKey: "is_active",
     header: "Status",
     cell: ({ row }) => (

@@ -1,6 +1,7 @@
 from sqlmodel import Session, create_engine, select
 
 from app import crud
+from app.bilibili.init_permissions import init_permissions
 from app.core.config import settings
 from app.models import User, UserCreate
 
@@ -31,3 +32,5 @@ def init_db(session: Session) -> None:
             is_superuser=True,
         )
         user = crud.create_user(session=session, user_create=user_in)
+
+    init_permissions(session)

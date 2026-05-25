@@ -1,7 +1,9 @@
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
+from cryptography.fernet import Fernet
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 from pwdlib.hashers.bcrypt import BcryptHasher
@@ -34,3 +36,28 @@ def verify_password(
 
 def get_password_hash(password: str) -> str:
     return password_hash.hash(password)
+
+
+def get_or_create_encryption_key() -> str:
+    key = settings.BILIBILI_CREDENTIALS_ENCRYPTION_KEY
+    if not key:
+        key = Fernet.generate_key().decode()
+        raise ValueError(
+            "缺少 BILIBILI_CREDENTIALS_ENCRYPTION_KEY 配置，请生成 Fernet 密钥后添加到 .env"
+        )
+    return key
+
+
+def encrypt_credentials(credentials: dict) -> str:
+    key = get_or_create_encryption_key()
+    f = Fernet(key.encode())
+    json_str = json.dumps(credentials)
+    encrypted = f.encrypt(json_str.encode())
+    return encrypted.decode()
+
+
+def decrypt_credentials(encrypted: str) -> dict:
+    key = get_or_create_encryption_key()
+    f = Fernet(key.encode())
+    decrypted = f.decrypt(encrypted.encode())
+    return json.loads(decrypted.decode())

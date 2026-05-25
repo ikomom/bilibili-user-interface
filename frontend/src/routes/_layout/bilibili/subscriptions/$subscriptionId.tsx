@@ -1,0 +1,268 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { createFileRoute, Link } from "@tanstack/react-router"
+import { ArrowLeft, ExternalLink, RotateCcw } from "lucide-react"
+import { useState } from "react"
+
+import { ResourceCard } from "@/components/bilibili/ResourceCard"
+import { SyncLogDialog } from "@/components/bilibili/SyncLogDialog"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import useCustomToast from "@/hooks/useCustomToast"
+import { bilibiliApi } from "@/lib/api/bilibili"
+import type { BilibiliResourceType } from "@/types/bilibili"
+import { handleError } from "@/utils"
+
+export const Route = createFileRoute(
+  "/_layout/bilibili/subscriptions/$subscriptionId",
+)({
+  component: SubscriptionDetailPage,
+  head: () => ({
+    meta: [{ title: "Bilibili Subscription - FastAPI Template" }],
+  }),
+})
+
+function SubscriptionDetailPage() {
+  const { subscriptionId } = Route.useParams()
+  const [resourceType, setResourceType] =
+    useState<BilibiliResourceType>("video")
+  const [keyword, setKeyword] = useState("")
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
+  const [logsOpen, setLogsOpen] = useState(false)
+  const queryClient = useQueryClient()
+  const { showSuccessToast, showErrorToast } = useCustomToast()
+  const { data: subscription } = useQuery({
+    queryFn: () => bilibiliApi.getSubscription(subscriptionId),
+    queryKey: ["bilibili-subscription", subscriptionId],
+  })
+  const retryFailed = useMutation({
+    mutationFn: bilibiliApi.retryFailedResources,
+    onError: handleError.bind(showErrorToast),
+    onSuccess: (result) => {
+      showSuccessToast(
+        `重试完成：成功 ${result.success}，失败 ${result.failed}`,
+      )
+      queryClient.invalidateQueries({
+        queryKey: ["bilibili-sync-logs", subscriptionId],
+      })
+    },
+  })
+  const { data: resources = [], isPending } = useQuery({
+    queryFn: () =>
+      bilibiliApi.getResources({
+        subscription_id: subscriptionId,
+        resource_type: resourceType,
+        keyword: keyword || undefined,
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+        page_size: 100,
+      }),
+    queryKey: [
+      "bilibili-resources",
+      subscriptionId,
+      resourceType,
+      keyword,
+      startDate,
+      endDate,
+    ],
+  })
+
+  const resourceCounts = resources.reduce(
+    (counts, resource) => {
+      counts[resource.resource_type] += 1
+      return counts
+    },
+    { article: 0, dynamic: 0, video: 0 },
+  )
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <Button variant="ghost" size="sm" asChild className="mb-2 px-0">
+            <Link to="/bilibili/subscriptions">
+              <ArrowLeft className="mr-2 size-4" />
+              返回订阅
+            </Link>
+          </Button>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {subscription?.uploader_name ?? "订阅详情"}
+          </h1>
+          <p className="text-muted-foreground">
+            UID {subscription?.uploader_uid ?? subscriptionId}
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => setLogsOpen(true)}>
+          查看同步日志
+        </Button>
+      </div>
+
+      <SyncLogDialog
+        subscriptionId={subscriptionId}
+        open={logsOpen}
+        onOpenChange={setLogsOpen}
+      />
+
+      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>UP 主信息</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-4">
+                {subscription?.uploader_avatar ? (
+                  <img
+                    alt={subscription.uploader_name}
+                    className="size-16 rounded-full object-cover"
+                    src={bilibiliApi.proxiedImageUrl(
+                      subscription.uploader_avatar,
+                    )}
+                  />
+                ) : null}
+                <div>
+                  <a
+                    className="font-semibold underline-offset-4 hover:underline"
+                    href={`https://space.bilibili.com/${subscription?.uploader_uid}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {subscription?.uploader_name ?? "UP 主"}
+                  </a>
+                  <p className="text-sm text-muted-foreground">
+                    UID {subscription?.uploader_uid}
+                  </p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {typeof subscription?.uploader_info.description === "string"
+                  ? subscription.uploader_info.description
+                  : "暂无简介"}
+              </p>
+              <Button variant="outline" size="sm" asChild>
+                <a
+                  href={`https://space.bilibili.com/${subscription?.uploader_uid}`}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <ExternalLink className="mr-2 size-4" />
+                  打开 B站主页
+                </a>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>同步配置</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex flex-wrap gap-2">
+                {subscription?.sync_config.resource_types.map((type) => (
+                  <Badge key={type} variant="secondary">
+                    {type === "video"
+                      ? "视频"
+                      : type === "dynamic"
+                        ? "动态"
+                        : "专栏"}
+                  </Badge>
+                ))}
+              </div>
+              <p>频率：{subscription?.sync_config.sync_frequency}</p>
+              <p>批大小：{subscription?.sync_config.batch_size}</p>
+              <p>
+                上次同步成功：
+                {subscription?.last_sync_at
+                  ? new Date(subscription.last_sync_at).toLocaleString()
+                  : "暂无"}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>统计</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-3 gap-2 text-center text-sm">
+              <div className="rounded-md bg-muted p-3">
+                <p className="text-lg font-semibold">{resourceCounts.video}</p>
+                <p className="text-muted-foreground">视频</p>
+              </div>
+              <div className="rounded-md bg-muted p-3">
+                <p className="text-lg font-semibold">
+                  {resourceCounts.dynamic}
+                </p>
+                <p className="text-muted-foreground">动态</p>
+              </div>
+              <div className="rounded-md bg-muted p-3">
+                <p className="text-lg font-semibold">
+                  {resourceCounts.article}
+                </p>
+                <p className="text-muted-foreground">专栏</p>
+              </div>
+              <Button
+                className="col-span-3"
+                disabled={retryFailed.isPending}
+                onClick={() => retryFailed.mutate(subscriptionId)}
+                variant="outline"
+              >
+                <RotateCcw className="mr-2 size-4" />
+                重试失败资源
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div>
+          <div className="mb-4 grid gap-3 md:grid-cols-3">
+            <Input
+              placeholder="搜索标题和内容"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+            />
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+            />
+          </div>
+          <Tabs
+            value={resourceType}
+            onValueChange={(value) =>
+              setResourceType(value as BilibiliResourceType)
+            }
+          >
+            <TabsList>
+              <TabsTrigger value="video">视频</TabsTrigger>
+              <TabsTrigger value="dynamic">动态</TabsTrigger>
+              <TabsTrigger value="article">专栏</TabsTrigger>
+            </TabsList>
+            <TabsContent value={resourceType} className="mt-4">
+              {isPending ? (
+                <p className="text-muted-foreground">加载资源中...</p>
+              ) : null}
+              {!isPending && resources.length === 0 ? (
+                <p className="rounded-lg border py-12 text-center text-sm text-muted-foreground">
+                  暂无资源
+                </p>
+              ) : null}
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {resources.map((resource) => (
+                  <ResourceCard key={resource.id} resource={resource} />
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -115,3 +115,57 @@ test("Redirects to /login when token is wrong", async ({ page }) => {
   await page.waitForURL("/login")
   await expect(page).toHaveURL("/login")
 })
+
+test("Logout remains available when saved token no longer matches a user", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/users/me", async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "User not found" }),
+    })
+  })
+  await page.goto("/settings")
+  await page.evaluate(() => {
+    localStorage.setItem("access_token", "stale_token")
+  })
+
+  await page.goto("/settings")
+
+  await page.getByTestId("user-menu").click()
+  await page.getByRole("menuitem", { name: "Log out" }).click()
+  await page.waitForURL("/login")
+  await expect(page).toHaveURL("/login")
+})
+
+test("User menu shows the signed-in user after logging in from an expired session", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/users/me", async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "User not found" }),
+    })
+  })
+  await page.goto("/settings")
+  await page.evaluate(() => {
+    localStorage.setItem("access_token", "stale_token")
+  })
+  await page.goto("/settings")
+  await page.getByTestId("user-menu").click()
+  await page.getByRole("menuitem", { name: "Log out" }).click()
+  await page.waitForURL("/login")
+
+  await page.unroute("**/api/v1/users/me")
+  await fillForm(page, firstSuperuser, firstSuperuserPassword)
+  await page.getByRole("button", { name: "Log In" }).click()
+  await page.waitForURL("/")
+
+  await page.getByTestId("user-menu").click()
+  await expect(
+    page.getByRole("menu").getByText(firstSuperuser).first(),
+  ).toBeVisible()
+  await expect(page.getByText("Session expired")).not.toBeVisible()
+})

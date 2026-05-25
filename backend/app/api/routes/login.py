@@ -4,12 +4,23 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlmodel import select
 
 from app import crud
 from app.api.deps import CurrentUser, SessionDep, get_current_active_superuser
 from app.core import security
 from app.core.config import settings
-from app.models import Message, NewPassword, Token, UserPublic, UserUpdate
+from app.models import (
+    Message,
+    NewPassword,
+    Permission,
+    RolePermission,
+    Token,
+    User,
+    UserPublic,
+    UserRole,
+    UserUpdate,
+)
 from app.utils import (
     generate_password_reset_token,
     generate_reset_password_email,
@@ -20,10 +31,27 @@ from app.utils import (
 router = APIRouter(tags=["login"])
 
 
-@router.post("/login/access-token")
+class LoginResponse(Token):
+    user: UserPublic
+    permissions: list[str]
+
+
+def _get_user_permissions(user: User, session: SessionDep) -> list[str]:
+    if user.is_superuser:
+        return ["*"]
+    permissions = session.exec(
+        select(Permission.code)
+        .join(RolePermission, Permission.id == RolePermission.permission_id)
+        .join(UserRole, RolePermission.role_id == UserRole.role_id)
+        .where(UserRole.user_id == user.id)
+    ).all()
+    return list(permissions)
+
+
+@router.post("/login/access-token", response_model=LoginResponse)
 def login_access_token(
     session: SessionDep, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
-) -> Token:
+) -> Any:
     """
     OAuth2 compatible token login, get an access token for future requests
     """
@@ -35,10 +63,13 @@ def login_access_token(
     elif not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    return Token(
+    permissions = _get_user_permissions(user, session)
+    return LoginResponse(
         access_token=security.create_access_token(
             user.id, expires_delta=access_token_expires
-        )
+        ),
+        user=UserPublic.model_validate(user),
+        permissions=permissions,
     )
 
 

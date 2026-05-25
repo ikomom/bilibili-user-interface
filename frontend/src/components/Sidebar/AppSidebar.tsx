@@ -1,4 +1,11 @@
-import { Briefcase, Home, Users } from "lucide-react"
+import {
+  Briefcase,
+  Home,
+  KeyRound,
+  RadioTower,
+  ShieldCheck,
+  Users,
+} from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -19,10 +26,23 @@ const baseItems: Item[] = [
 
 export function AppSidebar() {
   const { user: currentUser } = useAuth()
+  const permissions = currentUser?.permissions ?? []
+  const hasBilibiliAccess =
+    currentUser?.is_superuser ||
+    permissions.includes("*") ||
+    permissions.some((permission) => permission.startsWith("bilibili:"))
+  const visibleBaseItems = hasBilibiliAccess
+    ? [...baseItems, { icon: RadioTower, title: "Bilibili", path: "/bilibili" }]
+    : baseItems
 
   const items = currentUser?.is_superuser
-    ? [...baseItems, { icon: Users, title: "Admin", path: "/admin" }]
-    : baseItems
+    ? [
+        ...visibleBaseItems,
+        { icon: Users, title: "Users", path: "/admin/users" },
+        { icon: ShieldCheck, title: "Roles", path: "/admin/roles" },
+        { icon: KeyRound, title: "Permissions", path: "/admin/permissions" },
+      ]
+    : visibleBaseItems
 
   return (
     <Sidebar collapsible="icon">
