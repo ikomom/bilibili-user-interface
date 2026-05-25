@@ -13,6 +13,8 @@ services:
       - app-db-data:/var/lib/postgresql/data/pgdata
     env_file:
       - .env
+      - path: .env.local
+        required: false
     environment:
       - PGDATA=/var/lib/postgresql/data/pgdata
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Variable not set}
@@ -57,6 +59,8 @@ services:
     command: bash scripts/prestart.sh
     env_file:
       - .env
+      - path: .env.local
+        required: false
     environment:
       - DOMAIN=${DOMAIN}
       - FRONTEND_HOST=${FRONTEND_HOST?Variable not set}
@@ -75,12 +79,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER?Variable not set}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Variable not set}
       - SENTRY_DSN=${SENTRY_DSN}
-      - BILIBILI_REQUEST_TIMEOUT=${BILIBILI_REQUEST_TIMEOUT:-30}
-      - BILIBILI_RETRY_TIMES=${BILIBILI_RETRY_TIMES:-3}
-      - BILIBILI_RATE_LIMIT_DELAY=${BILIBILI_RATE_LIMIT_DELAY:-5}
-      - BILIBILI_SYNC_BATCH_SIZE=${BILIBILI_SYNC_BATCH_SIZE:-50}
-      - BILIBILI_CREDENTIALS_ENCRYPTION_KEY=${BILIBILI_CREDENTIALS_ENCRYPTION_KEY}
-      - APSCHEDULER_TIMEZONE=${APSCHEDULER_TIMEZONE:-Asia/Shanghai}
 
   backend:
     image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
@@ -114,12 +112,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER?Variable not set}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Variable not set}
       - SENTRY_DSN=${SENTRY_DSN}
-      - BILIBILI_REQUEST_TIMEOUT=${BILIBILI_REQUEST_TIMEOUT:-30}
-      - BILIBILI_RETRY_TIMES=${BILIBILI_RETRY_TIMES:-3}
-      - BILIBILI_RATE_LIMIT_DELAY=${BILIBILI_RATE_LIMIT_DELAY:-5}
-      - BILIBILI_SYNC_BATCH_SIZE=${BILIBILI_SYNC_BATCH_SIZE:-50}
-      - BILIBILI_CREDENTIALS_ENCRYPTION_KEY=${BILIBILI_CREDENTIALS_ENCRYPTION_KEY}
-      - APSCHEDULER_TIMEZONE=${APSCHEDULER_TIMEZONE:-Asia/Shanghai}
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/health-check/"]
