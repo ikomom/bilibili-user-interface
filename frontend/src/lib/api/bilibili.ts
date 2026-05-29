@@ -5,10 +5,13 @@ import type {
   BilibiliAccountCreate,
   BilibiliAccountUpdate,
   BilibiliResource,
+  BilibiliResourceCounts,
   BilibiliResourceQuery,
   BilibiliSubscription,
   BilibiliSubscriptionCreate,
   BilibiliSubscriptionUpdate,
+  PaginatedResources,
+  PaginatedSyncLogs,
   QRCodeCheckResponse,
   QRCodeGenerateResponse,
   RetryFailedResponse,
@@ -113,17 +116,23 @@ export const bilibiliApi = {
     }),
 
   getResources: (query: BilibiliResourceQuery = {}) =>
-    __request<BilibiliResource[]>(OpenAPI, {
+    __request<PaginatedResources>(OpenAPI, {
       method: "GET",
       url: "/api/v1/bilibili/resources",
       query: { ...query },
     }),
+  getResourceCounts: (subscriptionId?: string) =>
+    __request<BilibiliResourceCounts>(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/bilibili/resources/counts",
+      query: { subscription_id: subscriptionId },
+    }),
 
-  getSyncLogs: (subscriptionId: string) =>
-    __request<SyncLog[]>(OpenAPI, {
+  getSyncLogs: (subscriptionId: string, page = 1, pageSize = 20) =>
+    __request<PaginatedSyncLogs>(OpenAPI, {
       method: "GET",
       url: "/api/v1/bilibili/sync-logs",
-      query: { subscription_id: subscriptionId },
+      query: { subscription_id: subscriptionId, page, page_size: pageSize },
     }),
   getSyncLog: (logId: string) =>
     __request<SyncLog>(OpenAPI, {

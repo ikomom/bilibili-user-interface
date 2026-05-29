@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useMemo, useRef, useState } from "react"
 import useWebSocket, { ReadyState } from "react-use-websocket"
 import { OpenAPI } from "@/client"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -107,15 +108,33 @@ export function SyncLogDialog({
 }: SyncLogDialogProps) {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
+  const [syncLogPage, setSyncLogPage] = useState(1)
+  const [allSyncLogs, setAllSyncLogs] = useState<SyncLog[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
-  const { data: syncLogs = [] } = useQuery({
-    queryFn: () => bilibiliApi.getSyncLogs(subscriptionId),
-    queryKey: ["bilibili-sync-logs", subscriptionId],
+  const sidebarRef = useRef<HTMLDivElement>(null)
+  const queryClient = useQueryClient()
+  const { data: syncLogPageData } = useQuery({
+    queryFn: () => bilibiliApi.getSyncLogs(subscriptionId, syncLogPage, 20),
+    queryKey: ["bilibili-sync-logs", subscriptionId, syncLogPage],
     enabled: open,
   })
-  const latestLog = syncLogs[0]
+
+  // Accumulate sync logs across pages
+  useEffect(() => {
+    if (syncLogPageData) {
+      if (syncLogPage === 1) {
+        setAllSyncLogs(syncLogPageData.logs)
+      } else {
+        setAllSyncLogs((prev) => [...prev, ...syncLogPageData.logs])
+      }
+    }
+  }, [syncLogPageData, syncLogPage])
+
+  const totalSyncLogs = syncLogPageData?.total ?? 0
+  const hasMoreSyncLogs = allSyncLogs.length < totalSyncLogs
+  const latestLog = allSyncLogs[0]
   const selectedSyncLog =
-    syncLogs.find((log) => log.id === selectedLogId) ?? latestLog
+    allSyncLogs.find((log) => log.id === selectedLogId) ?? latestLog
   const selectedDetails =
     selectedSyncLog?.id === latestLog?.id
       ? logs
@@ -139,6 +158,8 @@ export function SyncLogDialog({
     } else {
       setLogs([])
       setSelectedLogId(null)
+      setAllSyncLogs([])
+      setSyncLogPage(1)
     }
   }, [open, latestLog])
 
@@ -152,8 +173,22 @@ export function SyncLogDialog({
         )
         return exists ? current : [...current, lastJsonMessage]
       })
+      if (
+        lastJsonMessage.message.startsWith("同步完成") ||
+        lastJsonMessage.message.startsWith("同步失败")
+      ) {
+        queryClient.invalidateQueries({
+          queryKey: ["bilibili-sync-logs", subscriptionId],
+        })
+        queryClient.invalidateQueries({
+          queryKey: ["bilibili-subscription", subscriptionId],
+        })
+        queryClient.invalidateQueries({
+          queryKey: ["bilibili-resource-counts", subscriptionId],
+        })
+      }
     }
-  }, [lastJsonMessage])
+  }, [lastJsonMessage, queryClient, subscriptionId])
 
   useEffect(() => {
     if (open && scrollRef.current) {
@@ -197,14 +232,17 @@ export function SyncLogDialog({
           </DialogTitle>
         </DialogHeader>
         <div className="grid min-h-0 gap-4 md:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="max-h-[68vh] overflow-y-auto rounded-lg border bg-muted/20 p-2">
-            {syncLogs.length === 0 ? (
+          <aside
+            ref={sidebarRef}
+            className="max-h-[68vh] overflow-y-auto rounded-lg border bg-muted/20 p-2"
+          >
+            {allSyncLogs.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">
                 暂无运行记录
               </p>
             ) : (
               <div className="space-y-2">
-                {syncLogs.map((syncLog) => (
+                {allSyncLogs.map((syncLog) => (
                   <button
                     className={`w-full rounded-md border p-3 text-left transition-colors hover:bg-muted ${
                       selectedSyncLog?.id === syncLog.id
@@ -238,6 +276,19 @@ export function SyncLogDialog({
                     ) : null}
                   </button>
                 ))}
+                {hasMoreSyncLogs ? (
+                  <Button
+                    className="w-full"
+                    variant="ghost"
+                    onClick={() => setSyncLogPage((p) => p + 1)}
+                  >
+                    加载更多（{allSyncLogs.length}/{totalSyncLogs}）
+                  </Button>
+                ) : allSyncLogs.length > 20 ? (
+                  <p className="py-2 text-center text-xs text-muted-foreground">
+                    已显示全部 {totalSyncLogs} 条记录
+                  </p>
+                ) : null}
               </div>
             )}
           </aside>

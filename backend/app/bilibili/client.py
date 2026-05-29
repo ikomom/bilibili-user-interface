@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from bilibili_api import Credential, user
+from bilibili_api import Credential, article, user
 from bilibili_api.exceptions import ResponseCodeException
 
 from app.bilibili.schemas import DYNAMIC_TYPE_DISPLAY, VIDEO_TYPE_DISPLAY
@@ -51,6 +51,12 @@ class BilibiliClient:
             "description": info.get("sign", ""),
         }
 
+    async def get_current_account_profile(self) -> dict[str, Any]:
+        uid = self.credentials.get("dedeuserid") or self.credentials.get("DedeUserID")
+        if not uid:
+            return {}
+        return await self.get_user_info(str(uid))
+
     async def check_uploader_exists(self, uid: str) -> bool:
         try:
             u = user.User(uid=int(uid), credential=self.credential)
@@ -80,7 +86,15 @@ class BilibiliClient:
     ) -> list[dict[str, Any]]:
         u = user.User(uid=int(uid), credential=self.credential)
         articles = await u.get_articles(pn=page)
-        return [self._transform_article_data(a) for a in articles.get("articles") or []]
+        results = []
+        for item in articles.get("articles") or []:
+            results.append(
+                self._transform_article_data(
+                    item,
+                    await self._fetch_article_full_content(item),
+                )
+            )
+        return results
 
     def _transform_video_data(self, raw: dict) -> dict[str, Any]:
         return {
@@ -109,13 +123,14 @@ class BilibiliClient:
         if isinstance(card, str):
             card = json.loads(card)
         dynamic_type = raw["desc"]["type"]
+        content = self._extract_dynamic_content(card)
         return {
             "resource_type": "dynamic",
             "resource_id": str(raw["desc"]["dynamic_id"]),
             "title": card.get("title", "动态"),
             "cover_url": card.get("pic", ""),
-            "summary": card.get("content", card.get("dynamic", ""))[:200],
-            "full_content": card.get("content", card.get("dynamic", "")),
+            "summary": content[:200],
+            "full_content": content,
             "published_at": datetime.fromtimestamp(raw["desc"]["timestamp"], timezone.utc),
             "attachments": self._extract_dynamic_attachments(card),
             "resource_meta": {
@@ -127,14 +142,34 @@ class BilibiliClient:
             },
         }
 
-    def _transform_article_data(self, raw: dict) -> dict[str, Any]:
+    async def _fetch_article_full_content(self, raw: dict) -> str:
+        cvid = int(raw["id"])
+        if self._is_note_article(raw):
+            try:
+                note = article.Note(
+                    cvid=cvid,
+                    note_type=article.NoteType.PUBLIC,
+                    credential=self.credential,
+                )
+                await note.fetch_content()
+                return note.markdown()
+            except Exception:
+                pass
+
+        return raw.get("summary", "")
+
+    def _is_note_article(self, raw: dict) -> bool:
+        category = raw.get("category") or {}
+        return category.get("id") in {41, 42}
+
+    def _transform_article_data(self, raw: dict, full_content: str | None = None) -> dict[str, Any]:
         return {
             "resource_type": "article",
             "resource_id": str(raw["id"]),
             "title": raw["title"],
             "cover_url": raw["image_urls"][0] if raw["image_urls"] else "",
             "summary": raw["summary"],
-            "full_content": raw["summary"],
+            "full_content": full_content or raw["summary"],
             "published_at": datetime.fromtimestamp(raw["publish_time"], timezone.utc),
             "resource_meta": {
                 "article_id": raw["id"],
@@ -144,10 +179,22 @@ class BilibiliClient:
             },
         }
 
+    def _extract_dynamic_content(self, card: dict) -> str:
+        item = card.get("item") or {}
+        return (
+            card.get("content")
+            or card.get("dynamic")
+            or item.get("description")
+            or item.get("content")
+            or ""
+        )
+
     def _extract_dynamic_attachments(self, card: dict) -> dict[str, Any]:
         attachments: dict[str, Any] = {"images": [], "documents": []}
         if "pictures" in card:
-            attachments["images"] = [p["img_src"] for p in card["pictures"]]
+            attachments["images"] = [p["img_src"] for p in card["pictures"] or []]
+        elif "pictures" in (card.get("item") or {}):
+            attachments["images"] = [p["img_src"] for p in card["item"]["pictures"] or []]
         return attachments
 
     def _parse_cookie(self, cookie_str: str) -> dict[str, str]:

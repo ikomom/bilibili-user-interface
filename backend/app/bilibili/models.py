@@ -18,6 +18,10 @@ class BilibiliAccount(SQLModel, table=True):
     account_name: str = Field(max_length=100)
     auth_type: str = Field(max_length=20)
     credentials: str
+    bilibili_uid: str | None = Field(default=None, max_length=50)
+    display_name: str | None = Field(default=None, max_length=100)
+    avatar_url: str | None = None
+    profile_info: dict = Field(default={}, sa_column=Column(JSONB))
     is_active: bool = Field(default=True)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
@@ -28,7 +32,10 @@ class BilibiliAccount(SQLModel, table=True):
         sa_type=DateTime(timezone=True),
     )
 
-    subscriptions: list["BilibiliSubscription"] = Relationship(back_populates="account")
+    subscriptions: list["BilibiliSubscription"] = Relationship(
+        back_populates="account",
+        cascade_delete=True,
+    )
 
 
 class BilibiliSubscription(SQLModel, table=True):
@@ -54,8 +61,14 @@ class BilibiliSubscription(SQLModel, table=True):
     )
 
     account: BilibiliAccount = Relationship(back_populates="subscriptions")
-    resources: list["BilibiliResource"] = Relationship(back_populates="subscription")
-    sync_logs: list["SyncLog"] = Relationship(back_populates="subscription")
+    resources: list["BilibiliResource"] = Relationship(
+        back_populates="subscription",
+        cascade_delete=True,
+    )
+    sync_logs: list["SyncLog"] = Relationship(
+        back_populates="subscription",
+        cascade_delete=True,
+    )
 
 
 class BilibiliResource(SQLModel, table=True):

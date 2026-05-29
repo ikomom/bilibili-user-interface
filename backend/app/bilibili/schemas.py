@@ -65,6 +65,10 @@ class AccountPublic(BaseModel):
     user_id: UUID
     account_name: str
     auth_type: str
+    bilibili_uid: str | None = None
+    display_name: str | None = None
+    avatar_url: str | None = None
+    profile_info: dict = {}
     is_active: bool
     created_at: datetime | None
     updated_at: datetime | None
@@ -123,6 +127,19 @@ class ResourceFilter(BaseModel):
     page_size: int = 20
 
 
+class PaginatedResources(BaseModel):
+    resources: list[ResourcePublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class ResourceCounts(BaseModel):
+    video: int = 0
+    dynamic: int = 0
+    article: int = 0
+
+
 class SyncLogPublic(BaseModel):
     id: UUID
     subscription_id: UUID
@@ -163,3 +180,14 @@ class RetryFailedResponse(BaseModel):
     total: int
     success: int
     failed: int
+
+
+class FailedResourcePublic(BaseModel):
+    id: UUID
+    subscription_id: UUID
+    resource_id: str
+    resource_type: str
+    failed_at: datetime
+    retry_count: int
+    last_error: str | None
+    resource_meta: dict[str, Any] | None

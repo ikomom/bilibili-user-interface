@@ -3,7 +3,686 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { AdminReadPermissionsData, AdminReadPermissionsResponse, AdminReadRolesResponse, AdminCreateRoleData, AdminCreateRoleResponse, AdminReadRoleData, AdminReadRoleResponse, AdminUpdateRoleData, AdminUpdateRoleResponse, AdminDeleteRoleData, AdminDeleteRoleResponse, AdminReadRolePermissionsData, AdminReadRolePermissionsResponse, AdminAssignPermissionToRoleData, AdminAssignPermissionToRoleResponse, AdminRemovePermissionFromRoleData, AdminRemovePermissionFromRoleResponse, AdminReadUserRolesData, AdminReadUserRolesResponse, AdminAssignRoleToUserData, AdminAssignRoleToUserResponse, AdminRemoveRoleFromUserData, AdminRemoveRoleFromUserResponse, BilibiliProxyBilibiliImageData, BilibiliProxyBilibiliImageResponse, BilibiliReadAccountsResponse, BilibiliCreateAccountData, BilibiliCreateAccountResponse, BilibiliReadAccountData, BilibiliReadAccountResponse, BilibiliUpdateAccountData, BilibiliUpdateAccountResponse, BilibiliDeleteAccountData, BilibiliDeleteAccountResponse, BilibiliGenerateQrcodeResponse, BilibiliCheckQrcodeData, BilibiliCheckQrcodeResponse, BilibiliReadSubscriptionsResponse, BilibiliCreateSubscriptionData, BilibiliCreateSubscriptionResponse, BilibiliReadSubscriptionData, BilibiliReadSubscriptionResponse, BilibiliUpdateSubscriptionData, BilibiliUpdateSubscriptionResponse, BilibiliDeleteSubscriptionData, BilibiliDeleteSubscriptionResponse, BilibiliPauseSubscriptionData, BilibiliPauseSubscriptionResponse, BilibiliSyncSubscriptionData, BilibiliSyncSubscriptionResponse, BilibiliRetryFailedResourcesData, BilibiliRetryFailedResourcesResponse, BilibiliGetFailedResourcesData, BilibiliGetFailedResourcesResponse, BilibiliReadResourcesData, BilibiliReadResourcesResponse, BilibiliReadResourceCountsData, BilibiliReadResourceCountsResponse, BilibiliReadResourceData, BilibiliReadResourceResponse, BilibiliReadSyncLogsData, BilibiliReadSyncLogsResponse, BilibiliReadSyncLogData, BilibiliReadSyncLogResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+
+export class AdminService {
+    /**
+     * Read Permissions
+     * @param data The data for the request.
+     * @param data.module
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static readPermissions(data: AdminReadPermissionsData = {}): CancelablePromise<AdminReadPermissionsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/admin/permissions',
+            query: {
+                module: data.module
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Roles
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static readRoles(): CancelablePromise<AdminReadRolesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/admin/roles'
+        });
+    }
+    
+    /**
+     * Create Role
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static createRole(data: AdminCreateRoleData): CancelablePromise<AdminCreateRoleResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/admin/roles',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Role
+     * @param data The data for the request.
+     * @param data.roleId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static readRole(data: AdminReadRoleData): CancelablePromise<AdminReadRoleResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/admin/roles/{role_id}',
+            path: {
+                role_id: data.roleId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Role
+     * @param data The data for the request.
+     * @param data.roleId
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static updateRole(data: AdminUpdateRoleData): CancelablePromise<AdminUpdateRoleResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/admin/roles/{role_id}',
+            path: {
+                role_id: data.roleId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Delete Role
+     * @param data The data for the request.
+     * @param data.roleId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static deleteRole(data: AdminDeleteRoleData): CancelablePromise<AdminDeleteRoleResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/admin/roles/{role_id}',
+            path: {
+                role_id: data.roleId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Role Permissions
+     * @param data The data for the request.
+     * @param data.roleId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static readRolePermissions(data: AdminReadRolePermissionsData): CancelablePromise<AdminReadRolePermissionsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/admin/roles/{role_id}/permissions',
+            path: {
+                role_id: data.roleId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Assign Permission To Role
+     * @param data The data for the request.
+     * @param data.roleId
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static assignPermissionToRole(data: AdminAssignPermissionToRoleData): CancelablePromise<AdminAssignPermissionToRoleResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/admin/roles/{role_id}/permissions',
+            path: {
+                role_id: data.roleId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Remove Permission From Role
+     * @param data The data for the request.
+     * @param data.roleId
+     * @param data.permissionId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static removePermissionFromRole(data: AdminRemovePermissionFromRoleData): CancelablePromise<AdminRemovePermissionFromRoleResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/admin/roles/{role_id}/permissions/{permission_id}',
+            path: {
+                role_id: data.roleId,
+                permission_id: data.permissionId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read User Roles
+     * @param data The data for the request.
+     * @param data.userId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static readUserRoles(data: AdminReadUserRolesData): CancelablePromise<AdminReadUserRolesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/admin/users/{user_id}/roles',
+            path: {
+                user_id: data.userId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Assign Role To User
+     * @param data The data for the request.
+     * @param data.userId
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static assignRoleToUser(data: AdminAssignRoleToUserData): CancelablePromise<AdminAssignRoleToUserResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/admin/users/{user_id}/roles',
+            path: {
+                user_id: data.userId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Remove Role From User
+     * @param data The data for the request.
+     * @param data.userId
+     * @param data.roleId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static removeRoleFromUser(data: AdminRemoveRoleFromUserData): CancelablePromise<AdminRemoveRoleFromUserResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/admin/users/{user_id}/roles/{role_id}',
+            path: {
+                user_id: data.userId,
+                role_id: data.roleId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
+export class BilibiliService {
+    /**
+     * Proxy Bilibili Image
+     * @param data The data for the request.
+     * @param data.url
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static proxyBilibiliImage(data: BilibiliProxyBilibiliImageData): CancelablePromise<BilibiliProxyBilibiliImageResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/image-proxy',
+            query: {
+                url: data.url
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Accounts
+     * @returns AccountPublic Successful Response
+     * @throws ApiError
+     */
+    public static readAccounts(): CancelablePromise<BilibiliReadAccountsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/accounts'
+        });
+    }
+    
+    /**
+     * Create Account
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns AccountPublic Successful Response
+     * @throws ApiError
+     */
+    public static createAccount(data: BilibiliCreateAccountData): CancelablePromise<BilibiliCreateAccountResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/bilibili/accounts',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Account
+     * @param data The data for the request.
+     * @param data.accountId
+     * @returns AccountPublic Successful Response
+     * @throws ApiError
+     */
+    public static readAccount(data: BilibiliReadAccountData): CancelablePromise<BilibiliReadAccountResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/accounts/{account_id}',
+            path: {
+                account_id: data.accountId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Account
+     * @param data The data for the request.
+     * @param data.accountId
+     * @param data.requestBody
+     * @returns AccountPublic Successful Response
+     * @throws ApiError
+     */
+    public static updateAccount(data: BilibiliUpdateAccountData): CancelablePromise<BilibiliUpdateAccountResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/bilibili/accounts/{account_id}',
+            path: {
+                account_id: data.accountId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Delete Account
+     * @param data The data for the request.
+     * @param data.accountId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static deleteAccount(data: BilibiliDeleteAccountData): CancelablePromise<BilibiliDeleteAccountResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/bilibili/accounts/{account_id}',
+            path: {
+                account_id: data.accountId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Generate Qrcode
+     * @returns QRCodeGenerateResponse Successful Response
+     * @throws ApiError
+     */
+    public static generateQrcode(): CancelablePromise<BilibiliGenerateQrcodeResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/bilibili/accounts/qrcode/generate'
+        });
+    }
+    
+    /**
+     * Check Qrcode
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns QRCodeCheckResponse Successful Response
+     * @throws ApiError
+     */
+    public static checkQrcode(data: BilibiliCheckQrcodeData): CancelablePromise<BilibiliCheckQrcodeResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/bilibili/accounts/qrcode/check',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Subscriptions
+     * @returns SubscriptionPublic Successful Response
+     * @throws ApiError
+     */
+    public static readSubscriptions(): CancelablePromise<BilibiliReadSubscriptionsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/subscriptions'
+        });
+    }
+    
+    /**
+     * Create Subscription
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static createSubscription(data: BilibiliCreateSubscriptionData): CancelablePromise<BilibiliCreateSubscriptionResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/bilibili/subscriptions',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Subscription
+     * @param data The data for the request.
+     * @param data.subId
+     * @returns SubscriptionPublic Successful Response
+     * @throws ApiError
+     */
+    public static readSubscription(data: BilibiliReadSubscriptionData): CancelablePromise<BilibiliReadSubscriptionResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/subscriptions/{sub_id}',
+            path: {
+                sub_id: data.subId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Subscription
+     * @param data The data for the request.
+     * @param data.subId
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static updateSubscription(data: BilibiliUpdateSubscriptionData): CancelablePromise<BilibiliUpdateSubscriptionResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/bilibili/subscriptions/{sub_id}',
+            path: {
+                sub_id: data.subId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Delete Subscription
+     * @param data The data for the request.
+     * @param data.subId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static deleteSubscription(data: BilibiliDeleteSubscriptionData): CancelablePromise<BilibiliDeleteSubscriptionResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/bilibili/subscriptions/{sub_id}',
+            path: {
+                sub_id: data.subId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Pause Subscription
+     * @param data The data for the request.
+     * @param data.subId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static pauseSubscription(data: BilibiliPauseSubscriptionData): CancelablePromise<BilibiliPauseSubscriptionResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/bilibili/subscriptions/{sub_id}/pause',
+            path: {
+                sub_id: data.subId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Sync Subscription
+     * @param data The data for the request.
+     * @param data.subId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static syncSubscription(data: BilibiliSyncSubscriptionData): CancelablePromise<BilibiliSyncSubscriptionResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/bilibili/subscriptions/{sub_id}/sync',
+            path: {
+                sub_id: data.subId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Retry Failed Resources
+     * @param data The data for the request.
+     * @param data.subId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static retryFailedResources(data: BilibiliRetryFailedResourcesData): CancelablePromise<BilibiliRetryFailedResourcesResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/bilibili/subscriptions/{sub_id}/retry-failed',
+            path: {
+                sub_id: data.subId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Failed Resources
+     * @param data The data for the request.
+     * @param data.subId
+     * @returns FailedResourcePublic Successful Response
+     * @throws ApiError
+     */
+    public static getFailedResources(data: BilibiliGetFailedResourcesData): CancelablePromise<BilibiliGetFailedResourcesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/subscriptions/{sub_id}/failed-resources',
+            path: {
+                sub_id: data.subId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Resources
+     * @param data The data for the request.
+     * @param data.subscriptionId
+     * @param data.resourceType
+     * @param data.keyword
+     * @param data.startDate
+     * @param data.endDate
+     * @param data.page
+     * @param data.pageSize
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static readResources(data: BilibiliReadResourcesData = {}): CancelablePromise<BilibiliReadResourcesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/resources',
+            query: {
+                subscription_id: data.subscriptionId,
+                resource_type: data.resourceType,
+                keyword: data.keyword,
+                start_date: data.startDate,
+                end_date: data.endDate,
+                page: data.page,
+                page_size: data.pageSize
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Resource Counts
+     * @param data The data for the request.
+     * @param data.subscriptionId
+     * @returns ResourceCounts Successful Response
+     * @throws ApiError
+     */
+    public static readResourceCounts(data: BilibiliReadResourceCountsData = {}): CancelablePromise<BilibiliReadResourceCountsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/resources/counts',
+            query: {
+                subscription_id: data.subscriptionId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Resource
+     * @param data The data for the request.
+     * @param data.resourceId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static readResource(data: BilibiliReadResourceData): CancelablePromise<BilibiliReadResourceResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/resources/{resource_id}',
+            path: {
+                resource_id: data.resourceId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Sync Logs
+     * @param data The data for the request.
+     * @param data.subscriptionId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static readSyncLogs(data: BilibiliReadSyncLogsData): CancelablePromise<BilibiliReadSyncLogsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/sync-logs',
+            query: {
+                subscription_id: data.subscriptionId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Sync Log
+     * @param data The data for the request.
+     * @param data.logId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static readSyncLog(data: BilibiliReadSyncLogData): CancelablePromise<BilibiliReadSyncLogResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/bilibili/sync-logs/{log_id}',
+            path: {
+                log_id: data.logId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
 
 export class ItemsService {
     /**
@@ -122,7 +801,7 @@ export class LoginService {
      * OAuth2 compatible token login, get an access token for future requests
      * @param data The data for the request.
      * @param data.formData
-     * @returns Token Successful Response
+     * @returns LoginResponse Successful Response
      * @throws ApiError
      */
     public static loginAccessToken(data: LoginLoginAccessTokenData): CancelablePromise<LoginLoginAccessTokenResponse> {

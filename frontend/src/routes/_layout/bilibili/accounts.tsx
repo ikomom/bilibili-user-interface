@@ -4,6 +4,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useState } from "react"
 
 import { AccountForm } from "@/components/bilibili/AccountForm"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -22,6 +23,11 @@ const authTypeText = {
   cookie: "Cookie",
   qrcode: "扫码登录",
   sessdata: "SESSDATA",
+}
+
+const getFollowerCount = (account: BilibiliAccount) => {
+  const value = account.profile_info?.follower_count
+  return typeof value === "number" ? value.toLocaleString() : null
 }
 
 export const Route = createFileRoute("/_layout/bilibili/accounts")({
@@ -99,11 +105,32 @@ function AccountsPage() {
           <Card key={account.id}>
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardTitle>{account.account_name}</CardTitle>
-                  <CardDescription>
-                    认证方式：{authTypeText[account.auth_type]}
-                  </CardDescription>
+                <div className="flex min-w-0 gap-3">
+                  <Avatar className="size-12 border">
+                    {account.avatar_url ? (
+                      <AvatarImage
+                        alt={account.display_name ?? account.account_name}
+                        src={bilibiliApi.proxiedImageUrl(account.avatar_url)}
+                      />
+                    ) : null}
+                    <AvatarFallback>
+                      {(account.display_name ?? account.account_name).slice(0, 1)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <CardTitle className="truncate">
+                      {account.display_name ?? account.account_name}
+                    </CardTitle>
+                    <CardDescription className="truncate">
+                      {account.bilibili_uid ? `UID：${account.bilibili_uid}` : account.account_name}
+                    </CardDescription>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <span>认证方式：{authTypeText[account.auth_type]}</span>
+                      {getFollowerCount(account) ? (
+                        <span>粉丝：{getFollowerCount(account)}</span>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
                 <Badge variant={account.is_active ? "default" : "secondary"}>
                   {account.is_active ? "可用" : "停用"}
@@ -111,12 +138,20 @@ function AccountsPage() {
               </div>
             </CardHeader>
             <CardContent className="flex items-center justify-between gap-3">
-              <span className="text-sm text-muted-foreground">
-                创建于{" "}
-                {account.created_at
-                  ? new Date(account.created_at).toLocaleDateString()
-                  : "未知"}
-              </span>
+              <div className="min-w-0 text-sm text-muted-foreground">
+                {typeof account.profile_info?.description === "string" &&
+                account.profile_info.description ? (
+                  <p className="mb-1 line-clamp-2">
+                    {account.profile_info.description}
+                  </p>
+                ) : null}
+                <span>
+                  创建于{" "}
+                  {account.created_at
+                    ? new Date(account.created_at).toLocaleDateString()
+                    : "未知"}
+                </span>
+              </div>
               <div className="flex gap-2">
                 <Button
                   size="sm"

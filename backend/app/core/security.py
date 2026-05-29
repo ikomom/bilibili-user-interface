@@ -43,7 +43,7 @@ def get_or_create_encryption_key() -> str:
     if not key:
         key = Fernet.generate_key().decode()
         raise ValueError(
-            "缺少 BILIBILI_CREDENTIALS_ENCRYPTION_KEY 配置，请生成 Fernet 密钥后添加到 .env"
+            "缺少 BILIBILI_CREDENTIALS_ENCRYPTION_KEY 配置，请生成 Fernet 密钥后添加到 .env.local"
         )
     return key
 

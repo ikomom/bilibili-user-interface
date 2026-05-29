@@ -15,6 +15,10 @@ export interface BilibiliAccount {
   user_id: string
   account_name: string
   auth_type: BilibiliAuthType
+  bilibili_uid: string | null
+  display_name: string | null
+  avatar_url: string | null
+  profile_info: Record<string, unknown>
   is_active: boolean
   created_at: string | null
   updated_at: string | null
@@ -83,6 +87,26 @@ export interface BilibiliResourceQuery {
   keyword?: string
   page?: number
   page_size?: number
+}
+
+export interface PaginatedResources {
+  resources: BilibiliResource[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface PaginatedSyncLogs {
+  logs: SyncLog[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface BilibiliResourceCounts {
+  video: number
+  dynamic: number
+  article: number
 }
 
 export interface SyncLog {

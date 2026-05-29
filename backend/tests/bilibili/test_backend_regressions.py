@@ -37,6 +37,64 @@ def test_account_credentials_are_stored_as_encrypted_string() -> None:
     assert BilibiliAccount.model_fields["credentials"].annotation is str
 
 
+def test_bilibili_account_model_has_profile_fields() -> None:
+    assert "bilibili_uid" in BilibiliAccount.model_fields
+    assert "display_name" in BilibiliAccount.model_fields
+    assert "avatar_url" in BilibiliAccount.model_fields
+    assert "profile_info" in BilibiliAccount.model_fields
+
+
+def test_create_account_stores_bilibili_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = User(
+        id=uuid.uuid4(),
+        email="admin@example.com",
+        hashed_password="hash",
+        is_superuser=True,
+    )
+    created = {}
+
+    class FakeClient:
+        def __init__(self, _credentials, _auth_type):
+            pass
+
+        async def verify_credentials(self):
+            return True
+
+        async def get_current_account_profile(self):
+            return {
+                "uid": "11473291",
+                "name": "笨笨的韭菜",
+                "avatar": "https://example.com/avatar.jpg",
+                "follower_count": 123,
+                "description": "简介",
+            }
+
+    def fake_create_account(_session, user_id, data):
+        created.update({"user_id": user_id, "data": data})
+        return BilibiliAccount(user_id=user_id, **data)
+
+    monkeypatch.setattr(bilibili_router, "BilibiliClient", FakeClient)
+    monkeypatch.setattr(bilibili_router, "encrypt_credentials", lambda _credentials: "encrypted")
+    monkeypatch.setattr(bilibili_router.crud, "create_account", fake_create_account)
+
+    response = anyio.run(
+        bilibili_router.create_account,
+        bilibili_router.AccountCreate(
+            account_name="手动账户",
+            auth_type="sessdata",
+            credentials={"sessdata": "sess", "bili_jct": "csrf", "dedeuserid": "11473291"},
+        ),
+        object(),
+        user,
+    )
+
+    assert response.display_name == "笨笨的韭菜"
+    assert created["data"]["bilibili_uid"] == "11473291"
+    assert created["data"]["display_name"] == "笨笨的韭菜"
+    assert created["data"]["avatar_url"] == "https://example.com/avatar.jpg"
+    assert created["data"]["profile_info"]["follower_count"] == 123
+
+
 def test_bilibili_models_are_registered_for_alembic_autogenerate() -> None:
     expected_tables = {
         "bilibili_accounts",
@@ -50,6 +108,13 @@ def test_bilibili_models_are_registered_for_alembic_autogenerate() -> None:
 
 def test_bilibili_resource_published_at_is_timezone_aware_column() -> None:
     assert BilibiliResource.__table__.c.published_at.type.timezone is True
+
+
+def test_subscription_relationships_cascade_delete_dependents() -> None:
+    relationships = BilibiliSubscription.__mapper__.relationships
+
+    assert "delete-orphan" in relationships["resources"].cascade
+    assert "delete-orphan" in relationships["sync_logs"].cascade
 
 
 def test_read_resources_limits_normal_user_to_owned_subscriptions(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -153,6 +218,34 @@ def test_read_resources_allows_view_all_permission(monkeypatch: pytest.MonkeyPat
     ) == []
 
     assert calls["subscription_ids"] is None
+
+
+def test_read_resource_counts_returns_all_types(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = User(
+        id=uuid.uuid4(),
+        email="user@example.com",
+        hashed_password="hash",
+        is_superuser=False,
+    )
+    subscription_id = uuid.uuid4()
+
+    monkeypatch.setattr(
+        bilibili_router.crud,
+        "get_subscription",
+        lambda _session, sub_id: SimpleNamespace(id=sub_id, user_id=user.id),
+    )
+    monkeypatch.setattr(
+        bilibili_router.crud,
+        "get_resource_counts",
+        lambda _session, **_kwargs: {"video": 1, "dynamic": 2, "article": 3},
+    )
+    monkeypatch.setattr(bilibili_router, "has_permission", lambda *_args: False)
+
+    assert bilibili_router.read_resource_counts(
+        session=object(),
+        subscription_id=subscription_id,
+        current_user=user,
+    ).model_dump() == {"article": 3, "dynamic": 2, "video": 1}
 
 
 def test_delete_subscription_uses_configured_scheduler(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -393,6 +486,276 @@ def test_sync_service_persists_broadcast_logs_to_running_sync_log() -> None:
     assert sent_logs == [(subscription_id, log_entry)]
 
 
+def test_fetch_resources_batch_skips_resource_type_on_bilibili_412() -> None:
+    from bilibili_api.exceptions import NetworkException
+
+    subscription_id = uuid.uuid4()
+    sent_logs = []
+
+    class FakeClient:
+        async def get_user_videos(self, _uid, page=1, page_size=50):
+            raise NetworkException(412, "风控页面")
+
+    service = SyncService(session=object(), ws_manager=object())
+
+    async def fake_send_log(_subscription_id, log_entry, _sync_log_id=None):
+        sent_logs.append(log_entry)
+
+    service._send_log = fake_send_log
+
+    result = anyio.run(
+        service._fetch_resources_batch,
+        FakeClient(),
+        SimpleNamespace(
+            id=subscription_id,
+            uploader_uid="11473291",
+            sync_config={"batch_size": 50},
+        ),
+        "video",
+        0,
+    )
+
+    assert result == []
+    assert sent_logs[-1]["level"] == "WARNING"
+    assert "B站风控" in sent_logs[-1]["message"]
+
+
+def test_incremental_sync_processes_current_old_batch_for_backfill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bilibili import sync_service as sync_service_module
+
+    subscription_id = uuid.uuid4()
+    last_sync_at = datetime.now(timezone.utc)
+    account = SimpleNamespace(credentials="encrypted", auth_type="qrcode")
+    subscription = SimpleNamespace(
+        id=subscription_id,
+        account=account,
+        uploader_name="UP主",
+        uploader_uid="11473291",
+        sync_config={"resource_types": ["dynamic"], "batch_size": 50},
+        last_sync_at=last_sync_at,
+    )
+    saved_resource_ids = []
+
+    class FakeSession:
+        def get(self, model, obj_id):
+            if model is BilibiliSubscription and obj_id == subscription_id:
+                return subscription
+            return None
+
+        def add(self, _obj):
+            pass
+
+        def commit(self):
+            pass
+
+    class FakeClient:
+        def __init__(self, _credentials, _auth_type):
+            pass
+
+        async def check_uploader_exists(self, _uid):
+            return True
+
+        async def verify_credentials(self):
+            return True
+
+    service = SyncService(FakeSession(), object())
+
+    async def fake_retry_failed_resources(_subscription_id, _client):
+        return (0, 0)
+
+    async def fake_fetch_resources_batch(_client, _subscription, _resource_type, _offset):
+        return [
+            {
+                "resource_type": "dynamic",
+                "resource_id": "old-1",
+                "title": "旧动态1",
+                "published_at": last_sync_at - timedelta(minutes=1),
+            },
+            {
+                "resource_type": "dynamic",
+                "resource_id": "old-2",
+                "title": "旧动态2",
+                "published_at": last_sync_at - timedelta(minutes=2),
+            },
+        ]
+
+    async def fake_save_resource(_subscription_id, resource_data, _client):
+        saved_resource_ids.append(resource_data["resource_id"])
+        return "skipped"
+
+    async def fake_send_log(_subscription_id, _log_entry, sync_log_id=None):
+        pass
+
+    async def fake_sleep(_seconds):
+        pass
+
+    monkeypatch.setattr(sync_service_module, "decrypt_credentials", lambda _credentials: {})
+    monkeypatch.setattr(sync_service_module, "BilibiliClient", FakeClient)
+    monkeypatch.setattr(sync_service_module.asyncio, "sleep", fake_sleep)
+    service._retry_failed_resources = fake_retry_failed_resources
+    service._fetch_resources_batch = fake_fetch_resources_batch
+    service._save_resource = fake_save_resource
+    service._send_log = fake_send_log
+
+    anyio.run(service.sync_subscription, subscription_id)
+
+    assert saved_resource_ids == ["old-1", "old-2"]
+
+
+def test_manual_sync_uses_history_limit_after_first_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bilibili import sync_service as sync_service_module
+
+    subscription_id = uuid.uuid4()
+    last_sync_at = datetime.now(timezone.utc)
+    account = SimpleNamespace(credentials="encrypted", auth_type="qrcode")
+    subscription = SimpleNamespace(
+        id=subscription_id,
+        account=account,
+        uploader_name="UP主",
+        uploader_uid="11473291",
+        sync_config={
+            "resource_types": ["dynamic"],
+            "batch_size": 50,
+            "history_limit": 100,
+        },
+        last_sync_at=last_sync_at,
+    )
+    offsets = []
+
+    class FakeSession:
+        def get(self, model, obj_id):
+            if model is BilibiliSubscription and obj_id == subscription_id:
+                return subscription
+            return None
+
+        def add(self, _obj):
+            pass
+
+        def commit(self):
+            pass
+
+    class FakeClient:
+        def __init__(self, _credentials, _auth_type):
+            pass
+
+        async def check_uploader_exists(self, _uid):
+            return True
+
+        async def verify_credentials(self):
+            return True
+
+    service = SyncService(FakeSession(), object())
+
+    async def fake_retry_failed_resources(_subscription_id, _client):
+        return (0, 0)
+
+    async def fake_fetch_resources_batch(_client, _subscription, _resource_type, offset):
+        offsets.append(offset)
+        return [
+            {
+                "resource_type": "dynamic",
+                "resource_id": f"old-{offset}-{index}",
+                "title": "旧动态",
+                "published_at": last_sync_at - timedelta(minutes=offset + index + 1),
+            }
+            for index in range(50)
+        ]
+
+    async def fake_save_resource(_subscription_id, _resource_data, _client):
+        return "skipped"
+
+    async def fake_send_log(_subscription_id, _log_entry, sync_log_id=None):
+        pass
+
+    monkeypatch.setattr(sync_service_module, "decrypt_credentials", lambda _credentials: {})
+    monkeypatch.setattr(sync_service_module, "BilibiliClient", FakeClient)
+    service._retry_failed_resources = fake_retry_failed_resources
+    service._fetch_resources_batch = fake_fetch_resources_batch
+    service._save_resource = fake_save_resource
+    service._send_log = fake_send_log
+
+    anyio.run(service.sync_subscription, subscription_id, "manual")
+
+    assert offsets == [0, 50]
+
+
+def test_sync_completion_log_is_persisted_after_status_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bilibili import sync_service as sync_service_module
+
+    subscription_id = uuid.uuid4()
+    account = SimpleNamespace(credentials="encrypted", auth_type="qrcode")
+    subscription = SimpleNamespace(
+        id=subscription_id,
+        account=account,
+        uploader_name="UP主",
+        uploader_uid="11473291",
+        sync_config={"resource_types": ["dynamic"], "batch_size": 50},
+        last_sync_at=None,
+    )
+    sent_logs = []
+
+    class FakeSession:
+        def get(self, model, obj_id):
+            if model is BilibiliSubscription and obj_id == subscription_id:
+                return subscription
+            return None
+
+        def add(self, _obj):
+            pass
+
+        def commit(self):
+            pass
+
+    class FakeClient:
+        def __init__(self, _credentials, _auth_type):
+            pass
+
+        async def check_uploader_exists(self, _uid):
+            return True
+
+        async def verify_credentials(self):
+            return True
+
+    service = SyncService(FakeSession(), object())
+
+    async def fake_retry_failed_resources(_subscription_id, _client):
+        return (0, 0)
+
+    async def fake_fetch_resources_batch(_client, _subscription, _resource_type, _offset):
+        return []
+
+    async def fake_send_log(_subscription_id, log_entry, sync_log_id=None):
+        sent_logs.append((log_entry, sync_log_id))
+
+    monkeypatch.setattr(sync_service_module, "decrypt_credentials", lambda _credentials: {})
+    monkeypatch.setattr(sync_service_module, "BilibiliClient", FakeClient)
+    service._retry_failed_resources = fake_retry_failed_resources
+    service._fetch_resources_batch = fake_fetch_resources_batch
+    service._send_log = fake_send_log
+
+    sync_log_id = anyio.run(service.sync_subscription, subscription_id)
+
+    completion_logs = [
+        (entry, persisted_log_id)
+        for entry, persisted_log_id in sent_logs
+        if entry["message"].startswith("同步完成")
+    ]
+    assert completion_logs == [(
+        {
+            "timestamp": completion_logs[0][0]["timestamp"],
+            "level": "INFO",
+            "message": "同步完成：成功 0 条，跳过 0 条，失败 0 条",
+        },
+        sync_log_id,
+    )]
+
+
 def test_manual_sync_endpoint_schedules_background_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     user = User(
         id=uuid.uuid4(),
@@ -452,8 +815,21 @@ def test_qrcode_check_creates_account_when_scan_confirmed(monkeypatch: pytest.Mo
         sessdata = "sess"
         bili_jct = "jct"
         buvid3 = "buvid"
-        dedeuserid = "dede"
+        dedeuserid = "11473291"
         ac_time_value = "refresh"
+
+    class FakeClient:
+        def __init__(self, _credentials, _auth_type):
+            pass
+
+        async def get_current_account_profile(self):
+            return {
+                "uid": "11473291",
+                "name": "笨笨的韭菜",
+                "avatar": "https://example.com/avatar.jpg",
+                "follower_count": 123,
+                "description": "简介",
+            }
 
     class FakeLogin:
         async def check_state(self):
@@ -470,15 +846,14 @@ def test_qrcode_check_creates_account_when_scan_confirmed(monkeypatch: pytest.Mo
         "expires_at": datetime.now(timezone.utc) + timedelta(minutes=3),
     }
     monkeypatch.setattr(bilibili_router, "encrypt_credentials", lambda data: f"encrypted:{data['sessdata']}")
+    monkeypatch.setattr(bilibili_router, "BilibiliClient", FakeClient)
 
     def fake_create_account(_session, user_id, data):
         created.update({"user_id": user_id, "data": data})
         return BilibiliAccount(
             id=uuid.uuid4(),
             user_id=user_id,
-            account_name=data["account_name"],
-            auth_type=data["auth_type"],
-            credentials=data["credentials"],
+            **data,
             is_active=True,
             created_at=None,
             updated_at=None,
@@ -500,6 +875,9 @@ def test_qrcode_check_creates_account_when_scan_confirmed(monkeypatch: pytest.Mo
     assert created["user_id"] == user.id
     assert created["data"]["auth_type"] == "qrcode"
     assert created["data"]["credentials"] == "encrypted:sess"
+    assert created["data"]["account_name"] == "笨笨的韭菜"
+    assert created["data"]["display_name"] == "笨笨的韭菜"
+    assert created["data"]["avatar_url"] == "https://example.com/avatar.jpg"
     assert qrcode_key not in bilibili_router._qr_login_sessions
 
 
@@ -676,6 +1054,71 @@ def test_transform_dynamic_data_accepts_card_dict() -> None:
     assert transformed["full_content"] == "动态正文"
 
 
+def test_transform_dynamic_data_reads_picture_dynamic_description() -> None:
+    from app.bilibili.client import BilibiliClient
+
+    client = BilibiliClient({"sessdata": "sess", "bili_jct": "csrf"}, "qrcode")
+
+    transformed = client._transform_dynamic_data({
+        "card": {
+            "item": {
+                "description": "图文动态正文",
+                "pictures": [{"img_src": "https://example.com/a.jpg"}],
+            }
+        },
+        "desc": {
+            "type": 2,
+            "dynamic_id": 1205068631041376260,
+            "timestamp": 1_700_000_000,
+            "like": 7,
+        },
+    })
+
+    assert transformed["summary"] == "图文动态正文"
+    assert transformed["full_content"] == "图文动态正文"
+    assert transformed["attachments"]["images"] == ["https://example.com/a.jpg"]
+
+
+def test_transform_dynamic_data_reads_repost_content() -> None:
+    from app.bilibili.client import BilibiliClient
+
+    client = BilibiliClient({"sessdata": "sess", "bili_jct": "csrf"}, "qrcode")
+
+    transformed = client._transform_dynamic_data({
+        "card": {
+            "item": {"content": "转发动态正文"},
+            "origin": '{"item":{"content":"原动态正文"}}',
+        },
+        "desc": {
+            "type": 1,
+            "dynamic_id": 1206257967593160728,
+            "timestamp": 1_700_000_000,
+            "like": 7,
+        },
+    })
+
+    assert transformed["summary"] == "转发动态正文"
+    assert transformed["full_content"] == "转发动态正文"
+
+
+def test_transform_dynamic_data_treats_null_pictures_as_empty() -> None:
+    from app.bilibili.client import BilibiliClient
+
+    client = BilibiliClient({"sessdata": "sess", "bili_jct": "csrf"}, "qrcode")
+
+    transformed = client._transform_dynamic_data({
+        "card": {"item": {"description": "正文", "pictures": None}},
+        "desc": {
+            "type": 2,
+            "dynamic_id": 1205068631041376260,
+            "timestamp": 1_700_000_000,
+            "like": 7,
+        },
+    })
+
+    assert transformed["attachments"]["images"] == []
+
+
 def test_get_user_dynamics_treats_null_cards_as_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.bilibili.client import BilibiliClient
 
@@ -708,6 +1151,72 @@ def test_transform_article_data_defaults_missing_stats() -> None:
 
     assert transformed["resource_meta"]["view_count"] == 0
     assert transformed["resource_meta"]["like_count"] == 0
+
+
+def test_get_user_articles_fetches_authenticated_note_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.bilibili.client import BilibiliClient
+
+    class FakeUser:
+        def __init__(self, uid=None, credential=None):
+            self.uid = uid
+
+        async def get_articles(self, pn=1):
+            return {
+                "articles": [
+                    {
+                        "id": 123,
+                        "title": "充电笔记",
+                        "image_urls": [],
+                        "summary": "摘要",
+                        "publish_time": 1_700_000_000,
+                        "category": {"id": 42},
+                    }
+                ]
+            }
+
+    class FakeNote:
+        def __init__(self, cvid=None, note_type=None, credential=None):
+            self.credential = credential
+
+        async def fetch_content(self):
+            pass
+
+        def markdown(self):
+            return "充电笔记正文"
+
+    monkeypatch.setattr("app.bilibili.client.user.User", FakeUser)
+    monkeypatch.setattr("app.bilibili.client.article.Note", FakeNote)
+
+    client = BilibiliClient({"sessdata": "sess", "bili_jct": "csrf"}, "qrcode")
+
+    [result] = anyio.run(client.get_user_articles, "11473291")
+
+    assert result["full_content"] == "充电笔记正文"
+
+
+def test_article_full_content_does_not_fetch_web_page_for_non_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bilibili.client import BilibiliClient
+
+    article_called = False
+
+    class FakeArticle:
+        def __init__(self, *args, **kwargs):
+            nonlocal article_called
+            article_called = True
+
+    monkeypatch.setattr("app.bilibili.client.article.Article", FakeArticle)
+
+    client = BilibiliClient({"sessdata": "sess", "bili_jct": "csrf"}, "qrcode")
+
+    content = anyio.run(
+        client._fetch_article_full_content,
+        {"id": 123, "summary": "摘要", "category": {"id": 1}},
+    )
+
+    assert content == "摘要"
+    assert article_called is False
 
 
 def test_get_user_articles_treats_missing_articles_as_empty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -962,17 +1471,29 @@ def test_read_resources_passes_date_filters(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_save_resource_reports_existing_as_skipped() -> None:
     subscription_id = uuid.uuid4()
+    published_at = datetime.now(timezone.utc)
     resource_data = {
         "resource_type": "video",
         "resource_id": "BV1xx",
         "title": "已存在视频",
-        "published_at": datetime.now(timezone.utc),
+        "summary": "简介",
+        "full_content": "简介",
+        "published_at": published_at,
     }
+    existing = BilibiliResource(
+        subscription_id=subscription_id,
+        resource_type="video",
+        resource_id="BV1xx",
+        title="已存在视频",
+        summary="简介",
+        full_content="简介",
+        published_at=published_at,
+    )
     sent_logs = []
 
     class FakeResult:
         def first(self):
-            return object()
+            return existing
 
     class FakeSession:
         def exec(self, _statement):
@@ -993,3 +1514,62 @@ def test_save_resource_reports_existing_as_skipped() -> None:
 
     assert result == "skipped"
     assert sent_logs[-1]["status"] == "skipped"
+
+
+def test_save_resource_updates_existing_when_full_content_is_better() -> None:
+    subscription_id = uuid.uuid4()
+    existing = BilibiliResource(
+        subscription_id=subscription_id,
+        resource_type="article",
+        resource_id="123",
+        title="旧标题",
+        summary="摘要",
+        full_content="摘要",
+        resource_meta={},
+        published_at=datetime.now(timezone.utc),
+    )
+    resource_data = {
+        "resource_type": "article",
+        "resource_id": "123",
+        "title": "新标题",
+        "summary": "摘要",
+        "full_content": "完整正文内容",
+        "published_at": existing.published_at,
+        "resource_meta": {"url": "https://www.bilibili.com/read/cv123"},
+    }
+    sent_logs = []
+    added = []
+
+    class FakeResult:
+        def first(self):
+            return existing
+
+    class FakeSession:
+        def exec(self, _statement):
+            return FakeResult()
+
+        def add(self, obj):
+            added.append(obj)
+
+        def commit(self):
+            pass
+
+    class FakeWsManager:
+        async def broadcast(self, _subscription_id, log_entry):
+            sent_logs.append(log_entry)
+
+    service = SyncService(FakeSession(), FakeWsManager())
+
+    async def fake_send_log(_subscription_id, log_entry, _sync_log_id=None):
+        sent_logs.append(log_entry)
+
+    service._send_log = fake_send_log
+
+    result = anyio.run(service._save_resource, subscription_id, resource_data, object())
+
+    assert result == "success"
+    assert existing.title == "新标题"
+    assert existing.full_content == "完整正文内容"
+    assert existing.resource_meta == resource_data["resource_meta"]
+    assert added == [existing]
+    assert sent_logs[-1]["status"] == "success"

@@ -19,6 +19,15 @@ import { SyncStatusBadge } from "@/components/bilibili/SyncStatusBadge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import useCustomToast from "@/hooks/useCustomToast"
 import { bilibiliApi } from "@/lib/api/bilibili"
 import type { BilibiliSubscription } from "@/types/bilibili"
@@ -42,6 +51,8 @@ export const Route = createFileRoute("/_layout/bilibili/subscriptions")({
 export function SubscriptionsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editingSubscription, setEditingSubscription] =
+    useState<BilibiliSubscription | null>(null)
+  const [deletingSubscription, setDeletingSubscription] =
     useState<BilibiliSubscription | null>(null)
   const [logSubscriptionId, setLogSubscriptionId] = useState<string | null>(
     null,
@@ -116,6 +127,39 @@ export function SubscriptionsPage() {
           onOpenChange={closeSyncLogDialog}
         />
       ) : null}
+
+      <Dialog
+        open={Boolean(deletingSubscription)}
+        onOpenChange={(open) => {
+          if (!open) setDeletingSubscription(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              确定要删除订阅「{deletingSubscription?.uploader_name}」吗？此操作无法撤销，已同步的资源也会一并删除。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">取消</Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              disabled={deleteSubscription.isPending}
+              onClick={() => {
+                if (deletingSubscription) {
+                  deleteSubscription.mutate(deletingSubscription.id)
+                  setDeletingSubscription(null)
+                }
+              }}
+            >
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {isPending ? (
         <p className="text-muted-foreground">加载订阅中...</p>
@@ -233,15 +277,7 @@ export function SubscriptionsPage() {
                 <Button
                   size="sm"
                   variant="destructive"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `确定删除订阅「${subscription.uploader_name}」吗？`,
-                      )
-                    ) {
-                      deleteSubscription.mutate(subscription.id)
-                    }
-                  }}
+                  onClick={() => setDeletingSubscription(subscription)}
                 >
                   <Trash2 className="mr-2 size-4" />
                   删除

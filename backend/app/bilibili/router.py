@@ -26,9 +26,13 @@ from app.bilibili.schemas import (
     AccountCreate,
     AccountPublic,
     AccountUpdate,
+    FailedResourcePublic,
+    PaginatedResources,
     QRCodeCheckRequest,
     QRCodeCheckResponse,
     QRCodeGenerateResponse,
+    ResourceCounts,
+    ResourcePublic,
     RetryFailedResponse,
     SubscriptionCreate,
     SubscriptionPublic,
@@ -49,6 +53,8 @@ QRCODE_LOGIN_CHANNEL = QrCodeLoginChannel.TV
 async def run_subscription_sync_background(
     subscription_id: uuid.UUID, sync_log_id: uuid.UUID
 ) -> None:
+    from app.core.db import engine
+
     with Session(engine) as session:
         service = SyncService(session, ws_manager)
         try:
@@ -91,6 +97,15 @@ def _credential_to_dict(credential: Any) -> dict[str, str | None]:
     }
 
 
+def _account_profile_data(profile: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "bilibili_uid": str(profile["uid"]) if profile.get("uid") else None,
+        "display_name": profile.get("name"),
+        "avatar_url": profile.get("avatar"),
+        "profile_info": profile,
+    }
+
+
 CurrentActiveUser = Depends(get_current_active_user)
 
 
@@ -129,11 +144,13 @@ async def create_account(
     if not valid:
         raise HTTPException(status_code=400, detail="账户凭证无效，请检查后重试")
 
+    profile = await client.get_current_account_profile()
     encrypted = encrypt_credentials(data.credentials)
     account = crud.create_account(session, current_user.id, {
         "account_name": data.account_name,
         "auth_type": data.auth_type,
         "credentials": encrypted,
+        **_account_profile_data(profile),
     })
     return account
 
@@ -183,7 +200,9 @@ async def update_account(
         valid = await client.verify_credentials()
         if not valid:
             raise HTTPException(status_code=400, detail="账户凭证无效")
+        profile = await client.get_current_account_profile()
         update_data["credentials"] = encrypt_credentials(data.credentials)
+        update_data.update(_account_profile_data(profile))
         if data.auth_type:
             update_data["auth_type"] = data.auth_type
 
@@ -258,10 +277,13 @@ async def check_qrcode(
         encrypted = encrypt_credentials(credentials)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    client = BilibiliClient(credentials, "qrcode")
+    profile = await client.get_current_account_profile()
     account = crud.create_account(session, current_user.id, {
-        "account_name": f"扫码账户 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
+        "account_name": profile.get("name") or f"扫码账户 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
         "auth_type": "qrcode",
         "credentials": encrypted,
+        **_account_profile_data(profile),
     })
     _qr_login_sessions.pop(data.qrcode_key, None)
     return QRCodeCheckResponse(status="confirmed", account=AccountPublic.model_validate(account, from_attributes=True))
@@ -481,8 +503,24 @@ async def retry_failed_resources(
     return RetryFailedResponse(total=success + failed, success=success, failed=failed)
 
 
+@router.get("/subscriptions/{sub_id}/failed-resources", response_model=list[FailedResourcePublic])
+def get_failed_resources(
+    sub_id: uuid.UUID,
+    session: SessionDep,
+    current_user: User = require_permission("bilibili:resource:view"),
+) -> Any:
+    sub = crud.get_subscription(session, sub_id)
+    if not sub:
+        raise HTTPException(status_code=404, detail="订阅不存在")
+    if not current_user.is_superuser and sub.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问此订阅")
+
+    failed_resources = crud.get_failed_resources(session, sub_id)
+    return failed_resources
+
+
 # --- Resources ---
-@router.get("/resources")
+@router.get("/resources", response_model=PaginatedResources)
 def read_resources(
     session: SessionDep,
     subscription_id: uuid.UUID | None = Query(None),
@@ -516,8 +554,45 @@ def read_resources(
         offset=offset,
         limit=page_size,
     )
+    total = crud.count_resources(
+        session,
+        subscription_id=subscription_id,
+        subscription_ids=subscription_ids,
+        resource_type=resource_type,
+        keyword=keyword,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
-    return resources
+    return PaginatedResources(
+        resources=[ResourcePublic(**r.model_dump()) for r in resources],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/resources/counts", response_model=ResourceCounts)
+def read_resource_counts(
+    session: SessionDep,
+    subscription_id: uuid.UUID | None = Query(None),
+    current_user: User = require_permission("bilibili:resource:view"),
+) -> Any:
+    subscription_ids = None
+    if not current_user.is_superuser and not has_permission(current_user, "bilibili:admin:view_all", session):
+        if subscription_id:
+            sub = crud.get_subscription(session, subscription_id)
+            if not sub or sub.user_id != current_user.id:
+                raise HTTPException(status_code=403, detail="无权访问此资源")
+        else:
+            subscriptions = crud.get_subscriptions(session, current_user.id)
+            subscription_ids = [sub.id for sub in subscriptions]
+
+    return ResourceCounts(**crud.get_resource_counts(
+        session,
+        subscription_id=subscription_id,
+        subscription_ids=subscription_ids,
+    ))
 
 
 @router.get("/resources/{resource_id}")
@@ -542,6 +617,8 @@ def read_resource(
 def read_sync_logs(
     session: SessionDep,
     subscription_id: uuid.UUID = Query(...),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     current_user: User = require_permission("bilibili:sync-log:view"),
 ) -> Any:
     sub = crud.get_subscription(session, subscription_id)
@@ -550,7 +627,11 @@ def read_sync_logs(
     if not current_user.is_superuser and sub.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问此日志")
 
-    return crud.get_sync_logs(session, subscription_id)
+    offset = (page - 1) * page_size
+    logs = crud.get_sync_logs(session, subscription_id, limit=page_size, offset=offset)
+    total = crud.count_sync_logs(session, subscription_id)
+
+    return {"logs": logs, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/sync-logs/{log_id}")
