@@ -3,7 +3,7 @@ import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query"
 import { ApiError } from "@/client"
 
 const handleApiError = (error: Error) => {
-  if (error instanceof ApiError && error.status === 401) {
+  if (error instanceof ApiError && [401, 403].includes(error.status)) {
     localStorage.removeItem("access_token")
     window.location.href = "/login"
   }
