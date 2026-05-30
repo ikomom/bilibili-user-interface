@@ -11,6 +11,7 @@ import type {
   BilibiliSubscriptionCreate,
   BilibiliSubscriptionUpdate,
   PaginatedResources,
+  PaginatedSubscriptions,
   PaginatedSyncLogs,
   QRCodeCheckResponse,
   QRCodeGenerateResponse,
@@ -61,10 +62,11 @@ export const bilibiliApi = {
       mediaType: "application/json",
     }),
 
-  getSubscriptions: () =>
-    __request<BilibiliSubscription[]>(OpenAPI, {
+  getSubscriptions: (page = 1, pageSize = 20) =>
+    __request<PaginatedSubscriptions>(OpenAPI, {
       method: "GET",
       url: "/api/v1/bilibili/subscriptions",
+      query: { page, page_size: pageSize },
     }),
   createSubscription: (requestBody: BilibiliSubscriptionCreate) =>
     __request<BilibiliSubscription>(OpenAPI, {
@@ -97,7 +99,7 @@ export const bilibiliApi = {
       path: { sub_id: subscriptionId },
     }),
   pauseSubscription: (subscriptionId: string) =>
-    __request<{ is_paused: boolean }>(OpenAPI, {
+    __request<{ is_paused: boolean; sync_cancelled: boolean }>(OpenAPI, {
       method: "PATCH",
       url: "/api/v1/bilibili/subscriptions/{sub_id}/pause",
       path: { sub_id: subscriptionId },

@@ -47,6 +47,7 @@ from app.models import User
 
 router = APIRouter(prefix="/bilibili", tags=["bilibili"])
 _qr_login_sessions: dict[str, Any] = {}
+_cancelled_syncs: set[uuid.UUID] = set()
 QRCODE_LOGIN_CHANNEL = QrCodeLoginChannel.TV
 
 
@@ -56,7 +57,7 @@ async def run_subscription_sync_background(
     from app.core.db import engine
 
     with Session(engine) as session:
-        service = SyncService(session, ws_manager)
+        service = SyncService(session, ws_manager, _cancelled_syncs)
         try:
             await service.sync_subscription(subscription_id, sync_log_id=sync_log_id)
         except Exception:
@@ -344,14 +345,22 @@ async def create_subscription(
     return sub
 
 
-@router.get("/subscriptions", response_model=list[SubscriptionPublic])
+@router.get("/subscriptions")
 def read_subscriptions(
     session: SessionDep,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     current_user: User = require_permission("bilibili:subscription:view"),
 ) -> Any:
+    offset = (page - 1) * page_size
     if current_user.is_superuser or has_permission(current_user, "bilibili:admin:view_all", session):
-        return _with_latest_sync_status(session, crud.get_subscriptions(session))
-    return _with_latest_sync_status(session, crud.get_subscriptions(session, current_user.id))
+        subs = _with_latest_sync_status(session, crud.get_subscriptions(session, offset=offset, limit=page_size))
+        total = crud.count_subscriptions(session)
+    else:
+        subs = _with_latest_sync_status(session, crud.get_subscriptions(session, current_user.id, offset=offset, limit=page_size))
+        total = crud.count_subscriptions(session, current_user.id)
+
+    return {"subscriptions": subs, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/subscriptions/{sub_id}", response_model=SubscriptionPublic)
@@ -436,7 +445,8 @@ def pause_subscription(
     if not current_user.is_superuser and sub.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权操作此订阅")
 
-    sub.is_paused = not sub.is_paused
+    now_paused = not sub.is_paused
+    sub.is_paused = now_paused
     session.add(sub)
     session.commit()
     session.refresh(sub)
@@ -444,11 +454,25 @@ def pause_subscription(
     from app.bilibili.scheduler import add_sync_job, get_scheduler, remove_sync_job
 
     scheduler = get_scheduler()
-    if sub.is_paused:
+    sync_cancelled = False
+    if now_paused:
         remove_sync_job(scheduler, sub_id)
+        _cancelled_syncs.add(sub_id)
+        running_log = session.exec(
+            select(SyncLog).where(
+                SyncLog.subscription_id == sub_id,
+                SyncLog.status == "running",
+            )
+        ).first()
+        if running_log:
+            running_log.status = "cancelled"
+            running_log.end_time = datetime.now(timezone.utc)
+            session.commit()
+            sync_cancelled = True
     else:
         add_sync_job(scheduler, sub)
-    return {"is_paused": sub.is_paused}
+        _cancelled_syncs.discard(sub_id)
+    return {"is_paused": now_paused, "sync_cancelled": sync_cancelled}
 
 
 @router.post("/subscriptions/{sub_id}/sync")

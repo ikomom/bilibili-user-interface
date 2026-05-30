@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { ArrowLeft, ExternalLink, RotateCcw } from "lucide-react"
+import { ArrowLeft, ExternalLink, LayoutGrid, List, RotateCcw } from "lucide-react"
 import { useState } from "react"
 import { z } from "zod"
 
@@ -10,15 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination"
+import { PaginationBar } from "@/components/ui/pagination-bar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { bilibiliApi } from "@/lib/api/bilibili"
@@ -46,6 +38,7 @@ function SubscriptionDetailPage() {
   const [keyword, setKeyword] = useState("")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const pageSize = 20
 
   const updateSearch = (patch: Partial<z.infer<typeof searchSchema>>) => {
@@ -242,8 +235,8 @@ function SubscriptionDetailPage() {
                 </p>
                 <p className="text-muted-foreground">专栏</p>
               </div>
-              <div className="rounded-md bg-destructive/10 p-3">
-                <p className="text-lg font-semibold text-destructive">
+              <div className="rounded-md bg-muted p-3">
+                <p className="text-lg font-semibold">
                   {failedResources.length}
                 </p>
                 <p className="text-muted-foreground">失败</p>
@@ -289,20 +282,42 @@ function SubscriptionDetailPage() {
             value={resourceType}
             onValueChange={handleTabChange}
           >
-            <TabsList>
-              <TabsTrigger value="video">
-                视频 ({resourceCounts.video})
-              </TabsTrigger>
-              <TabsTrigger value="dynamic">
-                动态 ({resourceCounts.dynamic})
-              </TabsTrigger>
-              <TabsTrigger value="article">
-                专栏 ({resourceCounts.article})
-              </TabsTrigger>
-              <TabsTrigger value="failed">
-                失败 ({failedResources.length})
-              </TabsTrigger>
-            </TabsList>
+            <div className="mb-4 flex items-center justify-between">
+              <TabsList>
+                <TabsTrigger value="video">
+                  视频 ({resourceCounts.video})
+                </TabsTrigger>
+                <TabsTrigger value="dynamic">
+                  动态 ({resourceCounts.dynamic})
+                </TabsTrigger>
+                <TabsTrigger value="article">
+                  专栏 ({resourceCounts.article})
+                </TabsTrigger>
+                <TabsTrigger value="failed">
+                  失败 ({failedResources.length})
+                </TabsTrigger>
+              </TabsList>
+              {resourceType !== "failed" ? (
+                <div className="flex items-center gap-1 rounded-lg border p-1">
+                  <Button
+                    size="sm"
+                    variant={viewMode === "grid" ? "default" : "ghost"}
+                    className="size-8 p-0"
+                    onClick={() => setViewMode("grid")}
+                  >
+                    <LayoutGrid className="size-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={viewMode === "list" ? "default" : "ghost"}
+                    className="size-8 p-0"
+                    onClick={() => setViewMode("list")}
+                  >
+                    <List className="size-4" />
+                  </Button>
+                </div>
+              ) : null}
+            </div>
             <TabsContent value={resourceType} className="mt-4">
               {resourceType === "failed" ? (
                 <FailedResourceList subscriptionId={subscriptionId} />
@@ -317,78 +332,70 @@ function SubscriptionDetailPage() {
                     </p>
                   ) : null}
                   {resources.length > 0 ? (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {resources.map((resource) => (
-                        <ResourceCard key={resource.id} resource={resource} />
-                      ))}
-                    </div>
+                    viewMode === "grid" ? (
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        {resources.map((resource) => (
+                          <ResourceCard key={resource.id} resource={resource} />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="divide-y rounded-lg border">
+                        {resources.map((resource) => {
+                          const url =
+                            typeof resource.resource_meta?.url === "string"
+                              ? resource.resource_meta.url
+                              : null
+                          return (
+                            <a
+                              key={resource.id}
+                              href={url ?? undefined}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={`flex items-center gap-4 px-4 py-3 hover:bg-muted/50 ${url ? "cursor-pointer" : "pointer-events-none"}`}
+                            >
+                              {resource.cover_url ? (
+                                <img
+                                  src={bilibiliApi.proxiedImageUrl(resource.cover_url)}
+                                  alt={resource.title}
+                                  className="size-12 flex-shrink-0 rounded object-cover"
+                                />
+                              ) : (
+                                <div className="size-12 flex-shrink-0 rounded bg-muted" />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate font-medium">
+                                  {resource.title}
+                                </p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {resource.summary}
+                                </p>
+                              </div>
+                              <Badge variant="secondary" className="flex-shrink-0">
+                                {resource.resource_type === "video"
+                                  ? "视频"
+                                  : resource.resource_type === "dynamic"
+                                    ? "动态"
+                                    : "专栏"}
+                              </Badge>
+                              <span className="flex-shrink-0 text-xs text-muted-foreground">
+                                {new Date(resource.published_at).toLocaleString()}
+                              </span>
+                              {url ? (
+                                <ExternalLink className="size-4 flex-shrink-0 text-muted-foreground" />
+                              ) : null}
+                            </a>
+                          )
+                        })}
+                      </div>
+                    )
                   ) : null}
                   {resources.length > 0 && totalPages >= 1 ? (
-                    <div className="mt-6 flex flex-col items-center gap-2">
-                      <p className="text-sm text-muted-foreground">
-                        第 {page} / {totalPages} 页，共 {total} 条
-                      </p>
-                      {totalPages > 1 ? (
-                        <Pagination>
-                          <PaginationContent>
-                            <PaginationItem>
-                              <PaginationPrevious
-                                href="#"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  updateSearch({ page: Math.max(1, page - 1) })
-                                }}
-                              />
-                            </PaginationItem>
-                            {Array.from(
-                              { length: totalPages },
-                              (_, i) => i + 1,
-                            ).map((p) => {
-                              if (
-                                p === 1 ||
-                                p === totalPages ||
-                                Math.abs(p - page) <= 2
-                              ) {
-                                return (
-                                  <PaginationItem key={p}>
-                                    <PaginationLink
-                                      href="#"
-                                      isActive={p === page}
-                                      onClick={(e) => {
-                                        e.preventDefault()
-                                        updateSearch({ page: p })
-                                      }}
-                                    >
-                                      {p}
-                                    </PaginationLink>
-                                  </PaginationItem>
-                                )
-                              }
-                              if (
-                                p === 2 && page > 4 ||
-                                p === totalPages - 1 && page < totalPages - 3
-                              ) {
-                                return (
-                                  <PaginationItem key={p}>
-                                    <PaginationEllipsis />
-                                  </PaginationItem>
-                                )
-                              }
-                              return null
-                            })}
-                            <PaginationItem>
-                              <PaginationNext
-                                href="#"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  updateSearch({ page: Math.min(totalPages, page + 1) })
-                                }}
-                              />
-                            </PaginationItem>
-                          </PaginationContent>
-                        </Pagination>
-                      ) : null}
-                    </div>
+                    <PaginationBar
+                      page={page}
+                      totalPages={totalPages}
+                      total={total}
+                      onPageChange={(p) => updateSearch({ page: p })}
+                    />
                   ) : null}
                 </>
               )}

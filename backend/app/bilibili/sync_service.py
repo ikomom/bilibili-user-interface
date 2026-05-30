@@ -21,16 +21,27 @@ from app.bilibili.websocket import ConnectionManager
 from app.core.security import decrypt_credentials
 
 
+class SyncCancelledError(Exception):
+    """同步被用户手动取消"""
+
 class SyncService:
-    def __init__(self, session: Session, ws_manager: ConnectionManager) -> None:
+    def __init__(
+        self, session: Session, ws_manager: ConnectionManager,
+        cancelled_syncs: set[UUID] | None = None,
+    ) -> None:
         self.session = session
         self.ws_manager = ws_manager
-        # 风控降级配置
+        self._cancelled_syncs = cancelled_syncs or set()
         self.risk_control_levels = [
             {"delay": 30, "batch_size": 20, "name": "轻度降级"},
             {"delay": 60, "batch_size": 10, "name": "中度降级"},
             {"delay": 120, "batch_size": 5, "name": "重度降级"},
         ]
+
+    def _raise_if_cancelled(self, subscription_id: UUID) -> None:
+        if subscription_id in self._cancelled_syncs:
+            self._cancelled_syncs.discard(subscription_id)
+            raise SyncCancelledError("用户手动取消同步")
 
     async def sync_subscription(
         self, subscription_id: UUID, sync_type: str = "manual", sync_log_id: UUID | None = None
@@ -87,6 +98,7 @@ class SyncService:
             is_first_sync = subscription.last_sync_at is None
 
             for resource_type in subscription.sync_config.get("resource_types", ["video"]):
+                self._raise_if_cancelled(subscription_id)
                 await self._send_log(subscription_id, {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "level": "INFO",
@@ -106,6 +118,7 @@ class SyncService:
                 max_risk_retries = 3
 
                 while True:
+                    self._raise_if_cancelled(subscription_id)
                     if use_history_window and history_limit is not None and fetched_count >= history_limit:
                         await self._send_log(subscription_id, {
                             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -154,6 +167,7 @@ class SyncService:
                             })
                             
                             await asyncio.sleep(level_config["delay"])
+                            self._raise_if_cancelled(subscription_id)
                             continue
                         else:
                             raise
@@ -234,6 +248,7 @@ class SyncService:
                         })
                     
                     await asyncio.sleep(delay)
+                    self._raise_if_cancelled(subscription_id)
 
             sync_log.status = "success"
             sync_log.end_time = datetime.now(timezone.utc)
@@ -252,6 +267,17 @@ class SyncService:
 
             return sync_log.id
 
+        except SyncCancelledError:
+            sync_log.status = "cancelled"
+            sync_log.end_time = datetime.now(timezone.utc)
+            self.session.commit()
+
+            await self._send_log(subscription_id, {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "level": "WARNING",
+                "message": "同步已被用户手动取消",
+            }, sync_log_id=sync_log.id)
+            return sync_log.id
         except Exception as e:
             sync_log.status = "failed"
             sync_log.end_time = datetime.now(timezone.utc)

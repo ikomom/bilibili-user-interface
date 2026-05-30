@@ -92,12 +92,21 @@ def create_subscription(
 
 
 def get_subscriptions(
-    session: Session, user_id: uuid.UUID | None = None
+    session: Session, user_id: uuid.UUID | None = None, offset: int = 0, limit: int = 20
 ) -> list[BilibiliSubscription]:
     query = select(BilibiliSubscription)
     if user_id:
         query = query.where(BilibiliSubscription.user_id == user_id)
-    return session.exec(query.order_by(BilibiliSubscription.created_at)).all()
+    return session.exec(query.order_by(BilibiliSubscription.created_at).offset(offset).limit(limit)).all()
+
+
+def count_subscriptions(
+    session: Session, user_id: uuid.UUID | None = None
+) -> int:
+    query = select(func.count()).select_from(BilibiliSubscription)
+    if user_id:
+        query = query.where(BilibiliSubscription.user_id == user_id)
+    return session.exec(query).one()
 
 
 def get_subscription(

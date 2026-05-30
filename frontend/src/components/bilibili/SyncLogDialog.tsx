@@ -99,12 +99,14 @@ interface SyncLogDialogProps {
   subscriptionId: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  syncCounter?: number
 }
 
 export function SyncLogDialog({
   subscriptionId,
   open,
   onOpenChange,
+  syncCounter,
 }: SyncLogDialogProps) {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
@@ -151,15 +153,31 @@ export function SyncLogDialog({
     },
   )
 
+  const prevCounterRef = useRef(syncCounter)
+  const prevLatestLogIdRef = useRef<string | null>(null)
+  
+  useEffect(() => {
+    if (open && syncCounter !== prevCounterRef.current && syncCounter > 0) {
+      prevCounterRef.current = syncCounter
+      prevLatestLogIdRef.current = null
+    }
+  }, [open, syncCounter])
+
   useEffect(() => {
     if (open) {
       setLogs(latestLog?.details ?? [])
-      setSelectedLogId((current) => current ?? latestLog?.id ?? null)
+      if (latestLog?.id && latestLog.id !== prevLatestLogIdRef.current) {
+        setSelectedLogId(latestLog.id)
+        prevLatestLogIdRef.current = latestLog.id
+      } else if (!latestLog) {
+        setSelectedLogId(null)
+      }
     } else {
       setLogs([])
       setSelectedLogId(null)
       setAllSyncLogs([])
       setSyncLogPage(1)
+      prevLatestLogIdRef.current = null
     }
   }, [open, latestLog])
 
@@ -175,10 +193,14 @@ export function SyncLogDialog({
       })
       if (
         lastJsonMessage.message.startsWith("同步完成") ||
-        lastJsonMessage.message.startsWith("同步失败")
+        lastJsonMessage.message.startsWith("同步失败") ||
+        lastJsonMessage.message.startsWith("同步已被")
       ) {
         queryClient.invalidateQueries({
           queryKey: ["bilibili-sync-logs", subscriptionId],
+        })
+        queryClient.invalidateQueries({
+          queryKey: ["bilibili-subscriptions"],
         })
         queryClient.invalidateQueries({
           queryKey: ["bilibili-subscription", subscriptionId],
@@ -194,17 +216,19 @@ export function SyncLogDialog({
     if (open && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [open])
+  }, [open, selectedDetails])
 
   const statusText: Record<SyncLog["status"], string> = {
     failed: "失败",
     running: "运行中",
     success: "成功",
+    cancelled: "已取消",
   }
 
   const statusVariant = (status: SyncLog["status"]) => {
     if (status === "failed") return "destructive"
     if (status === "running") return "secondary"
+    if (status === "cancelled") return "secondary"
     return "default"
   }
 

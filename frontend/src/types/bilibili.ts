@@ -1,7 +1,7 @@
 export type BilibiliAuthType = "cookie" | "sessdata" | "qrcode"
 export type BilibiliResourceType = "video" | "dynamic" | "article"
 export type SyncFrequency = "1h" | "6h" | "1d" | "1w" | "manual"
-export type SyncStatus = "running" | "success" | "failed"
+export type SyncStatus = "running" | "success" | "failed" | "cancelled"
 
 export interface SyncConfig {
   resource_types: BilibiliResourceType[]
@@ -98,6 +98,13 @@ export interface PaginatedResources {
 
 export interface PaginatedSyncLogs {
   logs: SyncLog[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface PaginatedSubscriptions {
+  subscriptions: BilibiliSubscription[]
   total: number
   page: number
   page_size: number

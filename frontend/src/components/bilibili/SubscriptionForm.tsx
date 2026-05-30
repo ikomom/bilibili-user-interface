@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
@@ -43,7 +43,6 @@ const formSchema = z.object({
   sync_frequency: z.enum(["1h", "6h", "1d", "1w", "manual"]),
   history_mode: z.enum(["none", "recent", "all"]),
   history_limit: z.string(),
-  batch_size: z.string().min(1, "请输入批大小"),
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -52,6 +51,7 @@ interface SubscriptionFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   subscription?: BilibiliSubscription | null
+  onCreated?: (subscriptionId: string) => void
 }
 
 export function SubscriptionForm({
@@ -77,10 +77,10 @@ export function SubscriptionForm({
       sync_frequency: "6h",
       history_mode: "recent",
       history_limit: "50",
-      batch_size: "50",
     },
   })
   const historyMode = form.watch("history_mode")
+  const [pendingFormData, setPendingFormData] = useState<FormData | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -101,18 +101,15 @@ export function SubscriptionForm({
       history_limit: String(
         historyLimit && historyLimit > 0 ? historyLimit : 50,
       ),
-      batch_size: String(subscription?.sync_config.batch_size ?? 50),
     })
-  }, [form, open, subscription])
+
+    if (!subscription && accounts.length > 0 && !form.getValues("account_id")) {
+      form.setValue("account_id", accounts[0].id)
+    }
+  }, [form, open, subscription, accounts])
 
   const createSubscription = useMutation({
     mutationFn: bilibiliApi.createSubscription,
-    onSuccess: () => {
-      showSuccessToast("订阅已创建")
-      form.reset()
-      onOpenChange(false)
-      queryClient.invalidateQueries({ queryKey: ["bilibili-subscriptions"] })
-    },
     onError: handleError.bind(showErrorToast),
   })
 
@@ -133,9 +130,8 @@ export function SubscriptionForm({
     onError: handleError.bind(showErrorToast),
   })
 
-  const onSubmit = (data: FormData) => {
+  const doSubmit = (data: FormData, overrideAll: boolean) => {
     const historyLimit = Number(data.history_limit)
-    const batchSize = Number(data.batch_size)
     const resourceTypes = [
       data.resource_video ? "video" : null,
       data.resource_dynamic ? "dynamic" : null,
@@ -148,6 +144,7 @@ export function SubscriptionForm({
     }
 
     if (
+      !overrideAll &&
       data.history_mode === "recent" &&
       (!Number.isInteger(historyLimit) ||
         historyLimit < 1 ||
@@ -157,21 +154,17 @@ export function SubscriptionForm({
       return
     }
 
-    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100) {
-      form.setError("batch_size", { message: "批大小必须是 1-100 的整数" })
-      return
-    }
-
     const syncConfig = {
       resource_types: resourceTypes,
       sync_frequency: data.sync_frequency,
       history_limit:
-        data.history_mode === "all"
+        overrideAll
           ? null
-          : data.history_mode === "none"
-            ? 0
-            : historyLimit,
-      batch_size: batchSize,
+          : data.history_mode === "all"
+            ? null
+            : data.history_mode === "none"
+              ? 0
+              : historyLimit,
     }
 
     if (subscription) {
@@ -183,12 +176,38 @@ export function SubscriptionForm({
         },
       })
     } else {
-      createSubscription.mutate({
-        account_id: data.account_id,
-        uploader_uid: data.uploader_uid,
-        sync_config: syncConfig,
-      })
+      createSubscription.mutate(
+        {
+          account_id: data.account_id,
+          uploader_uid: data.uploader_uid,
+          sync_config: syncConfig,
+        },
+        {
+          onSuccess: async (createdSub) => {
+            showSuccessToast("订阅已创建")
+            form.reset()
+            onOpenChange(false)
+            queryClient.invalidateQueries({
+              queryKey: ["bilibili-subscriptions"],
+            })
+            try {
+              await bilibiliApi.syncSubscription(createdSub.id)
+            } catch {
+              // 后台任务可能仍在运行，调用方需通过日志弹窗查看实际状态
+            }
+            onCreated?.(createdSub.id)
+          },
+        },
+      )
     }
+  }
+
+  const onSubmit = (data: FormData) => {
+    if (!subscription && data.history_mode !== "all") {
+      setPendingFormData(data)
+      return
+    }
+    doSubmit(data, false)
   }
 
   return (
@@ -335,7 +354,7 @@ export function SubscriptionForm({
                 name="history_mode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>首次同步</FormLabel>
+                    <FormLabel>同步规则</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -343,7 +362,7 @@ export function SubscriptionForm({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="none">不同步历史</SelectItem>
+                        <SelectItem value="none">仅新内容</SelectItem>
                         <SelectItem value="recent">最近 N 条</SelectItem>
                         <SelectItem value="all">全量同步</SelectItem>
                       </SelectContent>
@@ -352,36 +371,31 @@ export function SubscriptionForm({
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="history_limit"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>历史数量</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        disabled={historyMode !== "recent"}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="batch_size"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>批大小</FormLabel>
-                    <FormControl>
-                      <Input type="number" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {historyMode === "recent" ? (
+                <FormField
+                  control={form.control}
+                  name="history_limit"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>历史数量</FormLabel>
+                      <FormControl>
+                        <Input type="number" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
+              {historyMode === "none" ? (
+                <p className="sm:col-span-3 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+                  首次同步不拉取历史内容，之后只同步新增内容。
+                </p>
+              ) : null}
+              {historyMode === "recent" ? (
+                <p className="sm:col-span-3 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+                  首次同步将拉取最近指定数量的历史内容，之后只同步新增内容。
+                </p>
+              ) : null}
             </div>
             {historyMode === "all" ? (
               <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
@@ -407,6 +421,41 @@ export function SubscriptionForm({
             </DialogFooter>
           </form>
         </Form>
+
+        <Dialog
+          open={Boolean(pendingFormData)}
+          onOpenChange={(open) => {
+            if (!open) setPendingFormData(null)
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>首次同步设置</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              当前为「{pendingFormData?.history_mode === "none" ? "仅新内容" : "最近 N 条"}」模式，是否在首次同步时全量拉取所有历史内容？
+            </p>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (pendingFormData) doSubmit(pendingFormData, false)
+                  setPendingFormData(null)
+                }}
+              >
+                按规则同步
+              </Button>
+              <Button
+                onClick={() => {
+                  if (pendingFormData) doSubmit(pendingFormData, true)
+                  setPendingFormData(null)
+                }}
+              >
+                全量拉取一次
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   )
