@@ -84,6 +84,7 @@ services:
     volumes:
       - ./backend/htmlcov:/app/backend/htmlcov
     environment:
+      FRONTEND_HOST: "http://localhost:5173"
       SMTP_HOST: "mailcatcher"
       SMTP_PORT: "1025"
       SMTP_TLS: "false"
