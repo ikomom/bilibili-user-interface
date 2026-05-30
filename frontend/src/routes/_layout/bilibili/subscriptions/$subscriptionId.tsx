@@ -34,7 +34,7 @@ export const Route = createFileRoute(
 function SubscriptionDetailPage() {
   const { subscriptionId } = Route.useParams()
   const { type: resourceType, page } = Route.useSearch()
-  const navigate = useNavigate()
+  const navigate = useNavigate({ from: Route.fullPath })
   const [keyword, setKeyword] = useState("")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
@@ -204,7 +204,6 @@ function SubscriptionDetailPage() {
                 ))}
               </div>
               <p>频率：{subscription?.sync_config.sync_frequency}</p>
-              <p>批大小：{subscription?.sync_config.batch_size}</p>
               <p>
                 上次同步成功：
                 {subscription?.last_sync_at

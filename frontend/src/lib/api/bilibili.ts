@@ -4,12 +4,12 @@ import type {
   BilibiliAccount,
   BilibiliAccountCreate,
   BilibiliAccountUpdate,
-  BilibiliResource,
   BilibiliResourceCounts,
   BilibiliResourceQuery,
   BilibiliSubscription,
   BilibiliSubscriptionCreate,
   BilibiliSubscriptionUpdate,
+  FailedResourcePublic,
   PaginatedResources,
   PaginatedSubscriptions,
   PaginatedSyncLogs,
@@ -141,5 +141,11 @@ export const bilibiliApi = {
       method: "GET",
       url: "/api/v1/bilibili/sync-logs/{log_id}",
       path: { log_id: logId },
+    }),
+  getFailedResources: (subscriptionId: string) =>
+    __request<FailedResourcePublic[]>(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/bilibili/subscriptions/{sub_id}/failed-resources",
+      path: { sub_id: subscriptionId },
     }),
 }

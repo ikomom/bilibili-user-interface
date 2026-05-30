@@ -30,7 +30,7 @@ export function FailedResourceCard({
 }: FailedResourceCardProps) {
   const title = resource.resource_meta?.title || resource.resource_id
   const publishedAt = resource.resource_meta?.published_at
-    ? new Date(resource.resource_meta.published_at).toLocaleString()
+    ? new Date(resource.resource_meta.published_at as string).toLocaleString()
     : null
 
   return (
@@ -49,7 +49,7 @@ export function FailedResourceCard({
             <span className="text-xs text-muted-foreground">{publishedAt}</span>
           ) : null}
         </div>
-        <CardTitle className="line-clamp-2 leading-snug">{title}</CardTitle>
+        <CardTitle className="line-clamp-2 leading-snug">{title as string}</CardTitle>
         {resource.last_error ? (
           <CardDescription className="line-clamp-2 text-destructive">
             <AlertCircle className="mr-1 inline size-3" />

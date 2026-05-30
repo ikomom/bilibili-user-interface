@@ -157,7 +157,7 @@ export function SyncLogDialog({
   const prevLatestLogIdRef = useRef<string | null>(null)
   
   useEffect(() => {
-    if (open && syncCounter !== prevCounterRef.current && syncCounter > 0) {
+    if (open && syncCounter !== undefined && syncCounter !== prevCounterRef.current && syncCounter > 0) {
       prevCounterRef.current = syncCounter
       prevLatestLogIdRef.current = null
     }

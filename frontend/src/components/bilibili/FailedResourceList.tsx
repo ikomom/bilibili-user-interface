@@ -4,6 +4,7 @@ import { AlertTriangle } from "lucide-react"
 import { FailedResourceCard } from "@/components/bilibili/FailedResourceCard"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { bilibiliApi } from "@/lib/api/bilibili"
+import type { FailedResourcePublic } from "@/types/bilibili"
 
 interface FailedResourceListProps {
   subscriptionId: string
@@ -48,7 +49,7 @@ export function FailedResourceList({
       </Alert>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {failedResources.map((resource) => (
+        {failedResources.map((resource: FailedResourcePublic) => (
           <FailedResourceCard key={resource.id} resource={resource} />
         ))}
       </div>

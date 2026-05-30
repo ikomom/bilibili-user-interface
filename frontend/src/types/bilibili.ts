@@ -7,7 +7,17 @@ export interface SyncConfig {
   resource_types: BilibiliResourceType[]
   sync_frequency: SyncFrequency
   history_limit: number | null
-  batch_size: number
+}
+
+export interface FailedResourcePublic {
+  id: string
+  subscription_id: string
+  resource_id: string
+  resource_type: string
+  failed_at: string
+  retry_count: number
+  last_error: string | null
+  resource_meta: Record<string, unknown> | null
 }
 
 export interface BilibiliAccount {

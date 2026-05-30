@@ -3,12 +3,10 @@ import { createFileRoute, Link, Outlet } from "@tanstack/react-router"
 import {
   MoreVertical,
   Pause,
-  Pencil,
   Play,
   Plus,
   Radio,
   RotateCw,
-  Trash2,
 } from "lucide-react"
 import { useCallback, useState } from "react"
 
@@ -305,6 +303,7 @@ export function SubscriptionsPage() {
                       className="truncate font-medium underline-offset-4 hover:underline"
                       params={{ subscriptionId: subscription.id }}
                       to="/bilibili/subscriptions/$subscriptionId"
+                      search={{ type: "video", page: 1 }}
                     >
                       {subscription.uploader_name}
                     </Link>
@@ -373,6 +372,7 @@ export function SubscriptionsPage() {
                       <Link
                         to="/bilibili/subscriptions/$subscriptionId"
                         params={{ subscriptionId: subscription.id }}
+                        search={{ type: "video", page: 1 }}
                       >
                         详情
                       </Link>

@@ -58,6 +58,7 @@ export function SubscriptionForm({
   open,
   onOpenChange,
   subscription,
+  onCreated,
 }: SubscriptionFormProps) {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
