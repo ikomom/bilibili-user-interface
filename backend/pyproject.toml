@@ -71,6 +71,7 @@ keep-runtime-typing = true
 
 [tool.coverage.run]
 source = ["app"]
+omit = ["app/bilibili/"]
 dynamic_context = "test_function"
 
 [tool.coverage.report]
