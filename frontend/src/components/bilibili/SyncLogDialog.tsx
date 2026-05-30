@@ -228,7 +228,12 @@ export function SyncLogDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             同步日志
-            <Badge variant="secondary">{connectionText}</Badge>
+             <Badge
+              variant={readyState === ReadyState.OPEN ? "default" : "secondary"}
+              className={readyState === ReadyState.OPEN ? "bg-emerald-600 text-white" : undefined}
+            >
+              {connectionText}
+            </Badge>
           </DialogTitle>
         </DialogHeader>
         <div className="grid min-h-0 gap-4 md:grid-cols-[300px_minmax(0,1fr)]">

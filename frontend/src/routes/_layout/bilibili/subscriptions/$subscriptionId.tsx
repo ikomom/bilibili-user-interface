@@ -6,7 +6,6 @@ import { z } from "zod"
 
 import { FailedResourceList } from "@/components/bilibili/FailedResourceList"
 import { ResourceCard } from "@/components/bilibili/ResourceCard"
-import { SyncLogDialog } from "@/components/bilibili/SyncLogDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -47,7 +46,6 @@ function SubscriptionDetailPage() {
   const [keyword, setKeyword] = useState("")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
-  const [logsOpen, setLogsOpen] = useState(false)
   const pageSize = 20
 
   const updateSearch = (patch: Partial<z.infer<typeof searchSchema>>) => {
@@ -145,16 +143,7 @@ function SubscriptionDetailPage() {
             UID {subscription?.uploader_uid ?? subscriptionId}
           </p>
         </div>
-        <Button variant="outline" onClick={() => setLogsOpen(true)}>
-          查看同步日志
-        </Button>
       </div>
-
-      <SyncLogDialog
-        subscriptionId={subscriptionId}
-        open={logsOpen}
-        onOpenChange={setLogsOpen}
-      />
 
       <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         <div className="space-y-4">
@@ -310,7 +299,7 @@ function SubscriptionDetailPage() {
               <TabsTrigger value="article">
                 专栏 ({resourceCounts.article})
               </TabsTrigger>
-              <TabsTrigger value="failed" className="text-destructive">
+              <TabsTrigger value="failed">
                 失败 ({failedResources.length})
               </TabsTrigger>
             </TabsList>
