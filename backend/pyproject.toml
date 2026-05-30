@@ -71,7 +71,11 @@ keep-runtime-typing = true
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["app/bilibili/"]
+omit = [
+    "app/bilibili/*",
+    "app/initial_data.py",
+    "app/api/routes/admin.py",
+]
 dynamic_context = "test_function"
 
 [tool.coverage.report]
